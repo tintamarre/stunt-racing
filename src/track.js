@@ -20,7 +20,6 @@ export const TYPES = [
   { id: 'trees', label: 'Forest', road: false },
   { id: 'house', label: 'House', road: false },
   { id: 'boost', label: 'Boost pad', road: true },
-  { id: 'wall', label: 'Wall ride', road: true },
 ];
 export const TYPE_INDEX = Object.fromEntries(TYPES.map((t, i) => [t.id, i]));
 
@@ -73,10 +72,10 @@ const curveS = (u) => {
   return { p: v3(-H + H * Math.sin(a), 0, H - H * Math.cos(a)) };
 };
 
-const BANK = (30 * Math.PI) / 180;
+const BANK = (26 * Math.PI) / 180;
 const bankS = (u) => {
   const s = curveS(u);
-  const b = BANK * Math.sin(Math.PI * u) ** 0.8;
+  const b = BANK * Math.sin(Math.PI * u) ** 2;
   const toC = v3(-H, 0, H).sub(s.p).setY(0).normalize();
   s.p.y = (ROAD_W / 2 + 1) * Math.sin(b) + 0.02;
   s.up = v3(0, Math.cos(b), 0).addScaledVector(toC, Math.sin(b));
@@ -96,9 +95,9 @@ const rampCenter = (u) => {
   return rampS((x + H) / (RAMP_END + H));
 };
 
-const JUMP_H = 3;
+const JUMP_H = 2.6;
 const JUMP_GAP = 4.5;
-const jumpUp = (u) => ({ p: v3(-H + u * (H - JUMP_GAP), JUMP_H * (0.7 * u + 0.3 * u * u), 0) });
+const jumpUp = (u) => ({ p: v3(-H + u * (H - JUMP_GAP), JUMP_H * (0.8 * u + 0.2 * u * u), 0) });
 const jumpDown = (u) => ({ p: v3(JUMP_GAP + u * (H - JUMP_GAP), JUMP_H * (1 - smooth(u) * 0.5 - u * 0.5), 0) });
 const jumpCenter = (u) => {
   const x = -H + u * T;
@@ -111,8 +110,8 @@ const HUMP_H = 2.4;
 const humpS = (u) => ({ p: v3(-H + u * T, HUMP_H * Math.sin(Math.PI * u) ** 2, 0) });
 
 // Loop: lead-in (shifts sideways), a full circle drifting laterally, lead-out.
-export const LOOP_R = 9.5;
-const LOOP_C = 6.25;
+export const LOOP_R = 12;
+const LOOP_C = 7;
 const LOOP_LEN = [H, 2 * Math.PI * LOOP_R, H];
 const LOOP_TOTAL = LOOP_LEN[0] + LOOP_LEN[1] + LOOP_LEN[2];
 const loopS = (u) => {
@@ -134,21 +133,12 @@ const loopS = (u) => {
   return { p: v3(d, 0, LOOP_C * (1 - smooth(t))) };
 };
 
-// Wall ride: the road rolls up onto a near-vertical wall and back down.
-const WALL_ANG = (72 * Math.PI) / 180;
-const wallS = (u) => {
-  const b = WALL_ANG * Math.sin(Math.PI * u) ** 1.5;
-  const lat = 3 * Math.sin(Math.PI * u) ** 2;
-  const p = v3(-H + u * T, (ROAD_W / 2) * Math.sin(b) + 0.02, lat);
-  return { p, up: v3(0, Math.cos(b), -Math.sin(b)) };
-};
-
 export const PIECES = {
   straight: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
   start: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
   boost: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
   curve: { conn: ['W', 'S'], ribbons: [{ s: curveS, len: (Math.PI * H) / 2, curbs: true }], center: curveS },
-  bank: { conn: ['W', 'S'], ribbons: [{ s: bankS, len: (Math.PI * H) / 2, curbs: true, solid: true }], center: bankS },
+  bank: { conn: ['W', 'S'], ribbons: [{ s: bankS, len: (Math.PI * H) / 2, curbs: true, solid: true, rails: true }], center: bankS },
   ramp: { conn: ['W', 'E'], ribbons: [{ s: rampS, len: RAMP_END + H, solid: true, stripes: true }], center: rampCenter },
   jump: {
     conn: ['W', 'E'],
@@ -160,7 +150,6 @@ export const PIECES = {
   },
   hump: { conn: ['W', 'E'], ribbons: [{ s: humpS, len: T, solid: true }], center: humpS },
   loop: { conn: ['W', 'E'], ribbons: [{ s: loopS, len: LOOP_TOTAL, rails: true, step: 0.8 }], center: loopS },
-  wall: { conn: ['W', 'E'], ribbons: [{ s: wallS, len: T + 6, solid: true, curbs: true, step: 0.8 }], center: (u) => ({ p: v3(-H + u * T, 0, 0) }) },
 };
 
 function frameOf(sampler, u) {
@@ -296,6 +285,7 @@ export function buildTrack(track) {
   const trees = [];
   const houses = [];
   const boostZones = [];
+  const loops = [];
   const rand = mulberry(1234567);
 
   const edge = (fr, off, lift = 0) => fr.p.clone().addScaledVector(fr.right, off).addScaledVector(fr.up, lift);
@@ -379,8 +369,9 @@ export function buildTrack(track) {
           S.boost.quad(edge(a, -3, 0.05), edge(a, 3, 0.05), edge(b, 3, 0.05), edge(b, -3, 0.05), [0, 0, 1, 0, 1, 5, 0, 5]);
           boostZones.push({ c, r, dir: xf.dir(v3(1, 0, 0)) });
         }
+        if (type === 'loop') loops.push({ c, r });
         if (type === 'loop') props.push({ kind: 'loopTowers', pos: xf.o.clone(), q: xf.q });
-        if (type === 'wall' || type === 'bank' || type === 'jump' || type === 'ramp') props.push({ kind: 'flags', pos: xf.o.clone(), q: xf.q, type });
+        if (type === 'bank' || type === 'jump' || type === 'ramp') props.push({ kind: 'flags', pos: xf.o.clone(), q: xf.q, type });
       } else {
         // Scenery
         const cx = c * T + H;
@@ -397,5 +388,5 @@ export function buildTrack(track) {
   }
   // Keep trees off houses
   const treesFiltered = trees.filter((t) => !houses.some((h) => Math.hypot(t.x - h.x, t.z - h.z) < 8));
-  return { surfaces: S, collision: col, props, trees: treesFiltered, houses, boostZones, path: tracePath(track) };
+  return { surfaces: S, collision: col, props, trees: treesFiltered, houses, boostZones, loops, path: tracePath(track) };
 }
