@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="theme-color" content="#0b0f17" />
+    <meta name="description" content="Stunt Racing — loops, jumps, banked turns and a track editor. A modern tribute to the 1990 classic, right in your browser." />
+    <title>Stunt Racing</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='22' fill='none' stroke='%23ff4d1f' stroke-width='9'/%3E%3Crect x='6' y='44' width='52' height='9' rx='3' fill='%2339e0ff'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,400;0,600;0,700;1,700&family=Russo+One&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+
+    <div id="loading" class="screen">
+      <div class="logo big"><span>STUNT</span><span>RACING</span></div>
+      <div class="loadbar"><i></i></div>
+    </div>
+
+    <!-- Main menu -->
+    <div id="menu" class="screen hidden">
+      <div class="menu-col">
+        <div class="logo"><span>STUNT</span><span>RACING</span></div>
+        <p class="tagline">Loops. Jumps. Banked turns. Build your own track.</p>
+
+        <section class="card">
+          <header>Track</header>
+          <div class="picker">
+            <button class="arrow" data-pick="track" data-dir="-1" aria-label="Previous track">‹</button>
+            <div class="pick-body">
+              <canvas id="trackPreview" width="160" height="160"></canvas>
+              <div>
+                <div id="trackName" class="pick-name">—</div>
+                <div id="trackInfo" class="pick-sub">—</div>
+                <div id="trackBest" class="pick-best">—</div>
+              </div>
+            </div>
+            <button class="arrow" data-pick="track" data-dir="1" aria-label="Next track">›</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <header>Car</header>
+          <div class="picker">
+            <button class="arrow" data-pick="car" data-dir="-1" aria-label="Previous car">‹</button>
+            <div class="pick-body car">
+              <div>
+                <div id="carName" class="pick-name">—</div>
+                <div class="stats">
+                  <label>Speed</label><div class="bar"><i id="stat0"></i></div>
+                  <label>Accel</label><div class="bar"><i id="stat1"></i></div>
+                  <label>Grip</label><div class="bar"><i id="stat2"></i></div>
+                </div>
+              </div>
+              <span id="carSwatch" class="swatch"></span>
+            </div>
+            <button class="arrow" data-pick="car" data-dir="1" aria-label="Next car">›</button>
+          </div>
+        </section>
+
+        <section class="card row">
+          <header>Time</header>
+          <div class="seg" id="presetSeg">
+            <button data-preset="day">Day</button>
+            <button data-preset="sunset">Sunset</button>
+            <button data-preset="night">Night</button>
+          </div>
+        </section>
+
+        <div class="actions">
+          <button id="btnRace" class="btn primary">Race <kbd>Enter</kbd></button>
+          <button id="btnEditor" class="btn">Track editor</button>
+          <button id="btnHelp" class="btn ghost">How to play</button>
+        </div>
+      </div>
+      <div class="menu-foot">
+        <button id="btnQuality" class="chip">Graphics: High</button>
+        <button id="btnSound" class="chip">Sound: On</button>
+        <a class="chip" href="https://github.com/tintamarre/stunt-racing" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div class="hud-tl">
+        <div class="hud-time"><span id="hudTime">0:00.00</span></div>
+        <div class="hud-best">Best <span id="hudBest">—</span></div>
+      </div>
+      <div class="hud-tc">
+        <div class="progress"><i id="hudProg"></i></div>
+        <div class="prog-label"><span id="hudProgTxt">0/0</span> tiles</div>
+      </div>
+      <canvas id="minimap" width="200" height="200"></canvas>
+      <div class="hud-br">
+        <svg viewBox="0 0 200 200" class="gauge">
+          <circle class="g-bg" cx="100" cy="100" r="84" />
+          <circle id="gaugeArc" class="g-arc" cx="100" cy="100" r="84" />
+        </svg>
+        <div class="speed"><span id="hudSpeed">0</span><small>km/h</small></div>
+        <div class="gear" id="hudGear">1</div>
+      </div>
+      <div class="hud-bl">
+        <span class="chip small" id="hudCam">Chase</span>
+        <span class="hint"><kbd>C</kbd> camera <kbd>R</kbd> reset <kbd>G</kbd> ghost <kbd>Esc</kbd> pause</span>
+      </div>
+      <div id="msg" class="msg"></div>
+      <div id="airtime" class="airtime"></div>
+    </div>
+
+    <!-- Touch controls -->
+    <div id="touch" class="hidden">
+      <div class="t-left">
+        <button data-touch="left" aria-label="Steer left">◀</button>
+        <button data-touch="right" aria-label="Steer right">▶</button>
+      </div>
+      <div class="t-right">
+        <button data-touch="hb" class="small" aria-label="Handbrake">HB</button>
+        <button data-touch="brake" aria-label="Brake">▼</button>
+        <button data-touch="gas" class="gas" aria-label="Accelerate">▲</button>
+      </div>
+      <button id="tPause" class="t-pause" aria-label="Pause">❚❚</button>
+    </div>
+
+    <!-- Pause -->
+    <div id="pause" class="screen dim hidden">
+      <div class="panel">
+        <h2>Paused</h2>
+        <button class="btn primary" data-act="resume">Resume</button>
+        <button class="btn" data-act="restart">Restart</button>
+        <button class="btn ghost" data-act="menu">Main menu</button>
+      </div>
+    </div>
+
+    <!-- Finish -->
+    <div id="finish" class="screen hidden">
+      <div class="panel finish">
+        <div class="finish-title">FINISH</div>
+        <div id="finTrack" class="pick-sub"></div>
+        <div id="finTime" class="fin-time">0:00.00</div>
+        <div id="finRecord" class="record hidden">NEW RECORD</div>
+        <div id="finDetail" class="pick-sub"></div>
+        <div class="actions">
+          <button class="btn primary" data-act="restart">Race again</button>
+          <button class="btn" data-act="replay">Watch replay</button>
+          <button class="btn ghost" data-act="menu">Main menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Replay bar -->
+    <div id="replay" class="hidden">
+      <div class="replay-tag">● REPLAY</div>
+      <div class="replay-bar panel">
+        <button class="chip" data-rp="play" id="rpPlay">❚❚</button>
+        <input type="range" id="rpScrub" min="0" max="1000" value="0" />
+        <span id="rpTime" class="rp-time">0:00</span>
+        <button class="chip" data-rp="speed" id="rpSpeed">1×</button>
+        <button class="chip" data-rp="cam" id="rpCam">TV</button>
+        <button class="chip" data-rp="exit">Done</button>
+      </div>
+    </div>
+
+    <!-- Help -->
+    <div id="help" class="screen dim hidden">
+      <div class="panel help">
+        <h2>How to play</h2>
+        <div class="help-grid">
+          <div><kbd>↑</kbd>/<kbd>W</kbd></div><div>Accelerate (in the air: lean forward)</div>
+          <div><kbd>↓</kbd>/<kbd>S</kbd></div><div>Brake / reverse (in the air: lean back)</div>
+          <div><kbd>←</kbd><kbd>→</kbd>/<kbd>A</kbd><kbd>D</kbd></div><div>Steer (in the air: spin)</div>
+          <div><kbd>Space</kbd></div><div>Handbrake — drift!</div>
+          <div><kbd>C</kbd></div><div>Change camera (chase, bumper, TV, heli, cinematic)</div>
+          <div><kbd>R</kbd></div><div>Put the car back on the track</div>
+          <div><kbd>G</kbd></div><div>Show / hide your best-lap ghost</div>
+          <div><kbd>Esc</kbd></div><div>Pause</div>
+        </div>
+        <p>Drive over <b>every tile</b> of the track, then cross the finish line. Blue <b>boost pads</b> push you forward — use them before loops! Gamepads and touch screens work too.</p>
+        <button class="btn primary" data-act="close">Got it</button>
+      </div>
+    </div>
+
+    <!-- Editor -->
+    <div id="editor" class="hidden">
+      <div class="ed-top">
+        <input id="edName" maxlength="28" placeholder="Track name" />
+        <select id="edLoad"></select>
+        <button class="chip" id="edNew">New</button>
+        <button class="chip" id="edSave">Save</button>
+        <button class="chip" id="edShare">Copy share link</button>
+        <button class="chip" id="edDelete">Delete</button>
+        <span class="spacer"></span>
+        <button class="btn primary small" id="edTest">Test drive</button>
+        <button class="chip" id="edExit">Exit</button>
+      </div>
+      <div class="ed-main">
+        <div class="ed-palette" id="edPalette"></div>
+        <div class="ed-canvas-wrap"><canvas id="edCanvas"></canvas></div>
+      </div>
+      <div class="ed-status"><span id="edStatus"></span><span class="hint">Click / drag to place · Right-click or <kbd>R</kbd> to rotate · <kbd>E</kbd> eraser · Shift+click to pick</span></div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
