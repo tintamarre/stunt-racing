@@ -314,7 +314,7 @@ export class Game {
         this.skids.lift(i);
         const sp = car.speed();
         if (sp > 6 && Math.random() < Math.min(0.5, sp / 60)) {
-          this.particles.emit(pt, vel.clone().multiplyScalar(0.2), Math.random() < 0.5 ? dustColor : grassColor, 0.45, 0.6, 1.0);
+          this.particles.emit(pt, vel.clone().multiplyScalar(0.2), Math.random() < 0.75 ? dustColor : grassColor, 0.22, 0.5, 0.9);
         }
       } else {
         this.skids.add(i, pt, nrm, right, s > 0.3 ? s : 0);

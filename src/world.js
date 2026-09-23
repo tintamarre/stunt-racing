@@ -56,12 +56,12 @@ export const PRESETS = {
     rayleigh: 0.4,
     mie: 0.002,
     mieG: 0.7,
-    exposure: 0.9,
+    exposure: 1.05,
     sun: 0x9fb6ff,
-    sunI: 0.5,
-    hemiSky: 0x2a3a66,
-    hemiGround: 0x101418,
-    hemiI: 0.45,
+    sunI: 1.1,
+    hemiSky: 0x3a4f86,
+    hemiGround: 0x141a22,
+    hemiI: 0.9,
     fog: 0x0b1224,
     fogDensity: 0.0012,
     night: true,
@@ -214,7 +214,7 @@ export class World {
     if (this.envRT) this.envRT.dispose();
     this.envRT = this.pmrem.fromScene(this.envScene, 0.02);
     this.scene.environment = this.envRT.texture;
-    this.scene.environmentIntensity = p.night ? 0.25 : 0.55;
+    this.scene.environmentIntensity = p.night ? 0.4 : 0.55;
     for (const m of this.nightMaterials || []) m.emissiveIntensity = p.night ? m.userData.nightI : m.userData.dayI;
   }
 
@@ -273,7 +273,7 @@ export class World {
       const h = k * (60 + fbm(x * 0.0022, z * 0.0022, 5) * 520) - 10 + (1 - k) * 40;
       rp.setY(i, h);
       c.copy(rock).lerp(grassA, 0.35);
-      if (h > 260) c.lerp(snow, Math.min(1, (h - 260) / 60));
+      if (h > 330) c.lerp(snow, Math.min(1, (h - 330) / 80));
       rc[i * 3] = c.r;
       rc[i * 3 + 1] = c.g;
       rc[i * 3 + 2] = c.b;
@@ -343,9 +343,9 @@ export class World {
     }
 
     // Props
-    const steel = new THREE.MeshStandardMaterial({ color: 0xd9dde2, metalness: 0.85, roughness: 0.35 });
+    const steel = new THREE.MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.6, roughness: 0.45 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.6, roughness: 0.5 });
-    const lampMat = glow(0xfff1c8, 0.4, 6);
+    const lampMat = glow(0xfff1c8, 0.4, 2.2);
     for (const p of built.props) {
       const g = new THREE.Group();
       g.position.copy(p.pos);
@@ -358,7 +358,7 @@ export class World {
           g.add(post);
         }
         const bannerMat = new THREE.MeshStandardMaterial({ map: this.tex.banner, roughness: 0.5, emissive: 0xffffff, emissiveMap: this.tex.banner, emissiveIntensity: 0.15 });
-        bannerMat.userData = { dayI: 0.15, nightI: 1.2 };
+        bannerMat.userData = { dayI: 0.15, nightI: 0.5 };
         this.nightMaterials.push(bannerMat);
         // Box faces 0/1 (±x) face the drivers
         const banner = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.6, ROAD_W + 3.2), [bannerMat, bannerMat, dark, dark, dark, dark]);
@@ -408,10 +408,35 @@ export class World {
       group.add(g);
     }
 
+    this.buildDelineators(built.path, group, glow);
     this.buildTrees(built.trees, group);
     this.buildHouses(built.houses, group);
     this.scene.add(group);
     if (this.preset) for (const m of this.nightMaterials) m.emissiveIntensity = this.preset.night ? m.userData.nightI : m.userData.dayI;
+  }
+
+  // Roadside posts with reflectors every few metres; they glow at night.
+  buildDelineators(path, group, glow) {
+    const spots = [];
+    path.points.forEach((p, i) => {
+      if (i % 4 || p.p.y > 0.3 || p.up.y < 0.97 || p.type === 'loop') return;
+      const side = new THREE.Vector3().crossVectors(p.f, p.up).normalize();
+      for (const s of [-1, 1]) spots.push({ pos: p.p.clone().addScaledVector(side, s * (ROAD_W / 2 + 1.6)), s });
+    });
+    const postG = new THREE.BoxGeometry(0.12, 0.9, 0.12);
+    postG.translate(0, 0.45, 0);
+    const refG = new THREE.BoxGeometry(0.14, 0.14, 0.14);
+    refG.translate(0, 0.78, 0);
+    const posts = new THREE.InstancedMesh(postG, new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.6 }), spots.length);
+    const refs = new THREE.InstancedMesh(refG, glow(0xffa21a, 0.3, 5), spots.length);
+    const m = new THREE.Matrix4();
+    spots.forEach((sp, i) => {
+      m.makeTranslation(sp.pos.x, 0, sp.pos.z);
+      posts.setMatrixAt(i, m);
+      refs.setMatrixAt(i, m);
+    });
+    posts.castShadow = true;
+    group.add(posts, refs);
   }
 
   buildTrees(trees, group) {
