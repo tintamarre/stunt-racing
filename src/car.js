@@ -91,11 +91,27 @@ export class CarModel {
     this.paint = paint;
 
     const bodyMesh = new THREE.Mesh(loft(P.body, 5), paint);
-    // Painted cabin with a slightly larger glass shell that stops short of the roof
-    const cabin = new THREE.Mesh(loft(P.cabin, 3.2), paint);
-    const glassSt = P.cabin.map(([x, w, yb, yt], i) => [x + (i === 0 ? 0.01 : i === P.cabin.length - 1 ? -0.01 : 0), w + 0.012, yb, yt - (yt - yb) * 0.14 - 0.02]);
-    const glassMesh = new THREE.Mesh(loft(glassSt, 3.2), glass);
-    this.body.add(bodyMesh, cabin, glassMesh);
+    // Tinted glass cabin with a painted roof panel on top
+    const cabin = new THREE.Mesh(loft(P.cabin, 3.2), glass);
+    this.body.add(bodyMesh, cabin);
+    const at = (x) => {
+      const c = P.cabin;
+      for (let i = 0; i < c.length - 1; i++) {
+        if (x <= c[i][0] && x >= c[i + 1][0]) {
+          const t = (c[i][0] - x) / (c[i][0] - c[i + 1][0]);
+          return c[i].map((v, k) => v + (c[i + 1][k] - v) * t);
+        }
+      }
+      return c[c.length - 1];
+    };
+    const [r0, r1] = P.roof;
+    const roofSt = [];
+    for (let k = 0; k <= 6; k++) {
+      const [x, w, , yt] = at(r0 + ((r1 - r0) * k) / 6);
+      const taper = Math.sin((Math.PI * (k + 0.6)) / 7.2);
+      roofSt.push([x, w * 0.86 * (0.9 + 0.1 * taper), yt - 0.035, yt + 0.018]);
+    }
+    this.body.add(new THREE.Mesh(loft(roofSt, 6), paint));
 
     // Underbody / bumpers
     const under = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.1, width - 0.3), trim);

@@ -361,7 +361,7 @@ export function buildTrack(track) {
         if (type === 'start') {
           const a = worldFrame(straightS, 0.5, xf);
           const b = worldFrame(straightS, 0.5 + 2 / T, xf);
-          S.checker.quad(edge(a, -ROAD_W / 2, 0.05), edge(a, ROAD_W / 2, 0.05), edge(b, ROAD_W / 2, 0.05), edge(b, -ROAD_W / 2, 0.05), [0, 0, 8, 0, 8, 1, 0, 1]);
+          S.checker.quad(edge(a, -ROAD_W / 2, 0.05), edge(a, ROAD_W / 2, 0.05), edge(b, ROAD_W / 2, 0.05), edge(b, -ROAD_W / 2, 0.05), [0, 0, 2, 0, 2, 1, 0, 1]);
           props.push({ kind: 'gantry', pos: a.p, q: xf.q });
         }
         if (type === 'boost') {
