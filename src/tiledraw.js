@@ -133,3 +133,27 @@ export function drawBoard(ctx, track, size, { grid = true, detail = true, bg = '
     drawPiece(ctx, TYPES[cell.t].id, cell.r, (i % GRID) * s, Math.floor(i / GRID) * s, s, { detail });
   });
 }
+
+// Draw only the used part of the board (plus a margin), scaled to fill the canvas.
+export function drawBoardCropped(ctx, track, size, opts = {}) {
+  let c0 = GRID, r0 = GRID, c1 = -1, r1 = -1;
+  track.cells.forEach((cell, i) => {
+    if (!TYPES[cell.t].road) return;
+    const c = i % GRID;
+    const r = Math.floor(i / GRID);
+    c0 = Math.min(c0, c);
+    r0 = Math.min(r0, r);
+    c1 = Math.max(c1, c);
+    r1 = Math.max(r1, r);
+  });
+  if (c1 < 0) return drawBoard(ctx, track, size, opts);
+  const span = Math.max(c1 - c0, r1 - r0) + 1.6;
+  const cx = (c0 + c1 + 1) / 2;
+  const cy = (r0 + r1 + 1) / 2;
+  const full = document.createElement('canvas');
+  const cell = Math.ceil((size / span) * 1);
+  full.width = full.height = cell * GRID;
+  drawBoard(full.getContext('2d'), track, cell * GRID, opts);
+  ctx.clearRect(0, 0, size, size);
+  ctx.drawImage(full, (cx - span / 2) * cell, (cy - span / 2) * cell, span * cell, span * cell, 0, 0, size, size);
+}

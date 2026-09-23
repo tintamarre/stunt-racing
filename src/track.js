@@ -138,7 +138,7 @@ export const PIECES = {
   start: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
   boost: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
   curve: { conn: ['W', 'S'], ribbons: [{ s: curveS, len: (Math.PI * H) / 2, curbs: true }], center: curveS },
-  bank: { conn: ['W', 'S'], ribbons: [{ s: bankS, len: (Math.PI * H) / 2, curbs: true, solid: true, rails: true }], center: bankS },
+  bank: { conn: ['W', 'S'], ribbons: [{ s: bankS, len: (Math.PI * H) / 2, curbs: true, solid: true, rails: 'outer' }], center: bankS },
   ramp: { conn: ['W', 'E'], ribbons: [{ s: rampS, len: RAMP_END + H, solid: true, stripes: true }], center: rampCenter },
   jump: {
     conn: ['W', 'E'],
@@ -325,7 +325,8 @@ export function buildTrack(track) {
               }
             }
             if (rb.rails) {
-              for (const s of [-1, 1]) {
+              // On a curve the -right side is the outside
+              for (const s of rb.rails === 'outer' ? [-1] : [-1, 1]) {
                 const e0 = edge(A, (s * ROAD_W) / 2, 0);
                 const e1 = edge(B, (s * ROAD_W) / 2, 0);
                 const rq = [e0, e1, edge(B, (s * ROAD_W) / 2, 0.9), edge(A, (s * ROAD_W) / 2, 0.9)];

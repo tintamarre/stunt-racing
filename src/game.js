@@ -218,7 +218,7 @@ export class Game {
     else if (this.mode === 'attract' || this.mode === 'finished') inp = this.autopilot.input(car);
     else {
       const raw = this.input.read(DT);
-      inp = { throttle: 0, brake: 1, steer: raw.steer, handbrake: true };
+      inp = { throttle: 0, brake: 0, steer: raw.steer, handbrake: true, hold: true };
       this.revThrottle = raw.throttle;
     }
     if (this.mode === 'finished') inp.throttle *= 0.6;
@@ -256,6 +256,9 @@ export class Game {
       else if (car.contacts === 0 && car.speed() < 1) this.flipT += DT * 0.5;
       else this.flipT = 0;
       if (this.flipT > 1.3) this.respawn('CRASH!');
+      // The attract-mode driver cannot reverse out of a wall
+      this.stuckT = this.mode === 'attract' && car.speed() < 1 ? (this.stuckT || 0) + DT : 0;
+      if (this.stuckT > 3) this.respawn(null);
       if (p.y < -15) this.respawn('SPLASH!');
     }
 

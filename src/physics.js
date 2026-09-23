@@ -214,6 +214,10 @@ export class Car {
       if (reversing) engine = -spec.engine * 0.45 * input.brake * Math.max(0, 1 + fspeed / 14);
       else brake = 80 * input.brake;
     }
+    if (input.hold) {
+      engine = 0;
+      brake = 200;
+    }
     this.braking = brake > 0;
     this.reversing = reversing;
     for (let i = 0; i < 4; i++) {

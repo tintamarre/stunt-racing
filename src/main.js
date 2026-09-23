@@ -8,7 +8,7 @@ import { Audio } from './audio.js';
 import { Editor } from './editor.js';
 import { BUILTIN } from './tracks.js';
 import { decodeTrack, encodeTrack, tracePath, TYPES } from './track.js';
-import { drawBoard } from './tiledraw.js';
+import { drawBoardCropped } from './tiledraw.js';
 import { prefs as prefStore, customTracks, records } from './storage.js';
 
 const $ = (id) => document.getElementById(id);
@@ -79,7 +79,7 @@ async function boot() {
     const rec = records.get(encodeTrack(track));
     $('trackBest').textContent = rec ? `Best ${fmtTime(rec.time)} · ${CARS[rec.car ?? 0].name}` : 'No record yet';
     const ctx = $('trackPreview').getContext('2d');
-    drawBoard(ctx, track, 160, { grid: false, bg: '#16301a' });
+    drawBoardCropped(ctx, track, 160, { grid: false, bg: '#16301a' });
     if (kind === 'Built-in') {
       prefs.track = trackIdx;
       savePrefs();
