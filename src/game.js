@@ -149,6 +149,7 @@ export class Game {
     this.rig.snap = true;
     this.finishedAt = null;
     this.prevLocalX = -99;
+    this.loopFlag = false;
   }
 
   startAttract() {
@@ -288,6 +289,20 @@ export class Game {
       this.rig.shake = Math.max(this.rig.shake, car.landing * 0.5);
       this.audio.impact(car.landing);
       car.landing = 0;
+      if (this.mode === 'race') {
+        const upright = car.up(tmp).y > 0.6;
+        if (upright && car.lastSpin > 5.2) this.hud.message(car.lastSpin > 11 ? 'DOUBLE FLIP!' : 'FLIP!', 'air', 1.2);
+        else if (upright && car.lastAir > 1.1) this.hud.message(`BIG AIR ${car.lastAir.toFixed(1)}s`, 'air', 1.1);
+      }
+    }
+    // Loop callout once the car has been upside down inside a loop
+    if (car.inLoop && car.up(tmp).y < -0.7) this.loopFlag = true;
+    if (!car.inLoop && this.loopFlag) {
+      this.loopFlag = false;
+      if (this.mode === 'race' && car.up(tmp).y > 0.6) {
+        this.hud.message('LOOP!', 'air', 1);
+        this.audio.whoosh();
+      }
     }
     if (car.boosting > 0.75 && !this.wasBoosting) {
       this.audio.whoosh();

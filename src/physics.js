@@ -131,6 +131,7 @@ export class Car {
     this.steer = 0;
     this.onGrass = 0;
     this.airTime = 0;
+    this.airSpin = 0;
     this.grounded = 0;
     this.boosting = 0;
     this.slip = [0, 0, 0, 0];
@@ -188,10 +189,18 @@ export class Car {
     this.contacts = contacts;
     this.onGrass = contacts ? grass / contacts : 0;
     const wasAir = this.airTime;
-    if (contacts === 0) this.airTime += DT;
-    else {
-      if (wasAir > 0.35) this.landing = Math.min(1, wasAir / 1.5);
+    if (contacts === 0) {
+      this.airTime += DT;
+      const w = body.angvel();
+      this.airSpin += Math.hypot(w.x, w.y, w.z) * DT;
+    } else {
+      if (wasAir > 0.35) {
+        this.landing = Math.min(1, wasAir / 1.5);
+        this.lastAir = wasAir;
+        this.lastSpin = this.airSpin;
+      }
       this.airTime = 0;
+      this.airSpin = 0;
     }
 
     // Steering (speed sensitive, smoothed)
