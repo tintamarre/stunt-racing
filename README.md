@@ -17,6 +17,7 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 - Coins along every track and three stars per circuit: finish, beat the par time, collect every coin in one race.
 - Stunt score: air time, flips, loops, drifts, mini-turbos and felled trees score points; chain them within 2.5 s for up to ×5, crash and the chain is lost. Best score saved per track.
 - Burnout starts: from a standstill or out of reverse the rear wheels spin, smoke on asphalt, throw mud on grass, and the nose lifts (a lot on the monster truck).
+- Math quiz mode (serious gaming, menu: Math quiz Easy / Medium / Hard): every 25-40 s the race pauses on a multiple-choice question. Split screen: player 1 answers with 1-4, player 2 with 7 8 9 0; the first right answer drives off with a turbo, the other is frozen for 3 s. Alone: right = turbo, wrong = frozen.
 - Funny visual damage: dents, parts flying off, engine smoke and backfires (it never changes how the car drives).
 - Trees hit above ~20 km/h snap and let the car through, at the cost of some speed. Scraping a wall at a shallow angle slides the car along it; only a big wall hit head-on stops it.
 - Track editor: paint tiles (including 2×2 wide curves, 3×3 sweeping curves, slopes and elevation levels, bridges and tunnels) on a 16×16 board, test-drive instantly, save locally or copy a share link (the whole track is encoded in the URL).
@@ -73,4 +74,5 @@ Vanilla JavaScript + [Vite](https://vite.dev), [three.js](https://threejs.org) f
 | `tests/trees.mjs` | A fast car snaps a tree, a slow one is stopped |
 | `tests/tunnel.mjs` | Tunnels are solid from above and from the side |
 | `tests/walls.mjs` | Glancing wall hits keep speed, head-on hits stop the car |
+| `tests/quiz.mjs` | Quiz questions always have a whole answer among four distinct choices |
 | `tests/damage.mjs` | Damage detection: real crashes count, clean laps and big jumps don't |

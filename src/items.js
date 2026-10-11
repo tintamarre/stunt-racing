@@ -157,11 +157,6 @@ export class Items {
       // Opponents use their item after a little while
       if (pl.bot && pl.item && racing && (pl.botItemT -= DT) <= 0) this.use(pl);
       // Ongoing effects
-      if (pl.boostT > 0) {
-        pl.boostT -= DT;
-        this.push(car, 16);
-        car.boosting = Math.max(car.boosting, 0.3);
-      }
       if (pl.starT > 0) {
         pl.starT -= DT;
         this.push(car, 5);

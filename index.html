@@ -111,6 +111,15 @@
             </div>
           </div>
           <div class="opt">
+            <label>Math quiz</label>
+            <div class="seg" id="quizSeg">
+              <button data-quiz="off">Off</button>
+              <button data-quiz="easy">Easy</button>
+              <button data-quiz="medium">Med.</button>
+              <button data-quiz="hard">Hard</button>
+            </div>
+          </div>
+          <div class="opt">
             <label>Driving</label>
             <div class="seg" id="handlingSeg">
               <button data-handling="arcade" title="Easy kart-style steering, hold Space while turning to drift">Arcade</button>
@@ -260,6 +269,7 @@
           <div><kbd>Space</kbd>/<kbd>Shift</kbd></div><div>Arcade: hold while steering to drift, release for a mini-turbo (blue sparks, then orange for a super turbo). Classic: handbrake</div>
           <div><kbd>E</kbd></div><div>Use your item (🚀 turbo, 🍌 banana, 🦘 spring, ⭐ star) — drive through the <b>?</b> boxes to get one. Player 2: Right Ctrl</div>
           <div><kbd>H</kbd></div><div>Horn (each car has its own!)</div>
+          <div><kbd>1</kbd>–<kbd>4</kbd></div><div>Math quiz answers (player 2: <kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd> <kbd>0</kbd>). First right answer drives off, the other is frozen 3 s</div>
           <div><kbd>C</kbd></div><div>Change camera (chase, bumper, TV, heli, cinematic)</div>
           <div><kbd>R</kbd></div><div>Put the car back on the track</div>
           <div><kbd>G</kbd></div><div>Show / hide your best-lap ghost</div>
@@ -292,6 +302,22 @@
         <div class="ed-canvas-wrap"><canvas id="edCanvas"></canvas></div>
       </div>
       <div class="ed-status"><span id="edStatus"></span><span class="hint">Click / drag to place · Right-click or <kbd>R</kbd> to rotate · <kbd>+</kbd>/<kbd>−</kbd> height (slopes climb one level) · <kbd>E</kbd> eraser · Shift+click to pick</span></div>
+    </div>
+
+    <!-- Math quiz -->
+    <div id="quiz" class="quiz hidden">
+      <div class="panel quiz-panel">
+        <div class="quiz-title">QUIZ TIME!</div>
+        <div class="quiz-q">—</div>
+        <div class="quiz-choices">
+          <button data-choice="0"></button>
+          <button data-choice="1"></button>
+          <button data-choice="2"></button>
+          <button data-choice="3"></button>
+        </div>
+        <div class="quiz-time"><i></i></div>
+        <div class="quiz-who"></div>
+      </div>
     </div>
 
     <div id="toast" class="toast"></div>

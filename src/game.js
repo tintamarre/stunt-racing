@@ -15,6 +15,7 @@ import { Damage } from './damage.js';
 import { Items } from './items.js';
 import { Coins } from './coins.js';
 import { Stunts } from './stunts.js';
+import { Quiz } from './quiz.js';
 
 const FR = 16; // floats per recorded frame
 const MAX_FRAMES = 60 * 60 * 12;
@@ -78,6 +79,7 @@ export class Game {
     this.items = new Items(this);
     this.coinField = new Coins(this);
     this.stunts = new Stunts();
+    this.quiz = new Quiz(this);
   }
 
   setItems(on) {
@@ -344,6 +346,7 @@ export class Game {
     this.finishedAt = null;
     this.items.reset(this.everyone());
     this.coinField.reset(this.everyone());
+    this.quiz.reset();
     // Opponents in front, humans at the back of the grid
     const grid = [...this.bots, ...this.racers()];
     for (const pl of grid) {
@@ -354,6 +357,8 @@ export class Game {
       this.stunts.reset(pl);
       pl.trackIdx = pose.k;
       pl.missedT = 0;
+      pl.freezeT = 0;
+      pl.boostT = 0;
       pl.lastCi = this.path.points[pose.k].cell;
       pl.visited = new Set([0]);
       pl.raceTime = 0;
@@ -457,6 +462,13 @@ export class Game {
       let inp;
       if (pl.bot) {
         inp = this.mode === 'race' || this.mode === 'finished' ? pl.autopilot.input(car) : { throttle: 0, brake: 0, steer: 0, handbrake: true, hold: true };
+      } else if (this.mode === 'race' && pl.freezeT > 0) {
+        // Frozen by the quiz: held on the brakes until the time runs out
+        pl.freezeT -= DT;
+        const left = Math.ceil(pl.freezeT);
+        if (left !== pl.freezeShown) pl.hud.message(left > 0 ? `FROZEN ${left}` : 'GO!', left > 0 ? 'crash' : 'go', 0.9);
+        pl.freezeShown = left;
+        inp = { throttle: 0, brake: 0, steer: 0, handbrake: true, hold: true };
       } else if (this.mode === 'race' && !pl.done) inp = this.input.read(DT, slot);
       else if (this.mode === 'attract' || this.mode === 'finished' || pl.done) inp = pl.autopilot.input(car);
       else {
@@ -467,6 +479,12 @@ export class Game {
       if ((this.mode === 'finished' && !pl.bot) || pl.done) inp.throttle *= 0.6;
       pl.lastInput = inp;
       car.update(inp);
+      // Turbo from an item or a right quiz answer
+      if (pl.boostT > 0) {
+        pl.boostT -= DT;
+        this.items.push(car, 16);
+        car.boosting = Math.max(car.boosting, 0.3);
+      }
       if (this.mode === 'race' || this.mode === 'finished') {
         for (const i of this.physics.smashTrees(car)) this.fellTree(i, pl);
       }
@@ -476,6 +494,7 @@ export class Game {
     this.physics.step();
     for (const pl of pls) this.afterStep(pl);
     if (this.p2 && this.mode === 'race') this.checkSplitEnd();
+    this.quiz.step();
   }
 
   // Opponents speed up a little when behind the best human and ease off when ahead
@@ -817,6 +836,7 @@ export class Game {
     dt = Math.min(dt, 0.1);
     this.clock += dt;
     const sim = this.mode === 'attract' || this.mode === 'countdown' || this.mode === 'race' || this.mode === 'finished';
+    if (this.mode === 'quiz') this.quiz.update(dt);
     const pls = this.racers();
     const all = this.everyone();
     const states = [];
@@ -932,7 +952,7 @@ export class Game {
     this.world.update(this.clock, state.p);
 
     // Audio (player 1's engine)
-    const active = this.mode !== 'paused' && !(this.mode === 'replay' && this.replayPaused);
+    const active = this.mode !== 'paused' && this.mode !== 'quiz' && !(this.mode === 'replay' && this.replayPaused);
     const inp = this.lastInput || { throttle: 0 };
     const thr = this.mode === 'countdown' ? this.revThrottle || 0 : this.mode === 'replay' ? 0.6 : inp.throttle;
     const slip = this.mode === 'replay' ? state.slip || 0 : Math.max(...this.car.slip);

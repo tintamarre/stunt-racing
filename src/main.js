@@ -48,7 +48,7 @@ async function boot() {
   cloneHud();
   const game = new Game(world, audio, input, hud);
   game.hud2 = new Hud('p2');
-  const prefs = { car: 0, preset: 'day', weather: 'clear', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, opponents: 3, ai: 'normal', items: true, ...prefStore.load() };
+  const prefs = { car: 0, preset: 'day', weather: 'clear', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, opponents: 3, ai: 'normal', items: true, quiz: 'off', ...prefStore.load() };
   if (isTouch) prefs.players = 1;
 
   // Track list: built-ins, the player's tracks, and a shared one from the URL
@@ -127,6 +127,13 @@ async function boot() {
     $('car2Swatch').style.background = hex;
     $('car2Swatch').style.color = hex;
     game.setPlayers(prefs.players, prefs.car2);
+  }
+
+  function selectQuiz(level) {
+    prefs.quiz = level;
+    savePrefs();
+    game.quiz.level = level;
+    document.querySelectorAll('#quizSeg button').forEach((b) => b.classList.toggle('on', b.dataset.quiz === level));
   }
 
   function selectItems(on) {
@@ -302,6 +309,7 @@ async function boot() {
   document.querySelectorAll('#lapsSeg button').forEach((b) => b.addEventListener('click', () => selectLaps(+b.dataset.laps)));
   document.querySelectorAll('#playersSeg button').forEach((b) => b.addEventListener('click', () => selectPlayers(+b.dataset.players)));
   document.querySelectorAll('#itemsSeg button').forEach((b) => b.addEventListener('click', () => selectItems(b.dataset.items === 'on')));
+  document.querySelectorAll('#quizSeg button').forEach((b) => b.addEventListener('click', () => selectQuiz(b.dataset.quiz)));
   $('tItem').addEventListener('pointerdown', (e) => {
     e.preventDefault();
     game.useItem(1);
@@ -386,6 +394,11 @@ async function boot() {
     const inMenu = !$('menu').classList.contains('hidden');
     const inEditor = !$('editor').classList.contains('hidden');
     if (inEditor) return;
+    // During a quiz question the keys answer it, nothing else
+    if (m === 'quiz') {
+      game.quiz.key(code);
+      return;
+    }
     if (!$('help').classList.contains('hidden')) {
       if (code === 'Escape' || code === 'Enter') show('menu');
       return;
@@ -444,6 +457,7 @@ async function boot() {
   selectPlayers(prefs.players);
   selectOpponents(prefs.opponents, prefs.ai);
   selectItems(prefs.items);
+  selectQuiz(prefs.quiz);
   if (isTouch) $('playersSeg').closest('.opt').classList.add('hidden');
   selectWeather(prefs.weather);
   selectPreset(prefs.preset);
