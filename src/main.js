@@ -444,7 +444,7 @@ async function boot() {
   selectPlayers(prefs.players);
   selectOpponents(prefs.opponents, prefs.ai);
   selectItems(prefs.items);
-  if (isTouch) $('playersSeg').closest('.card').classList.add('hidden');
+  if (isTouch) $('playersSeg').closest('.opt').classList.add('hidden');
   selectWeather(prefs.weather);
   selectPreset(prefs.preset);
   selectTrack(trackIdx);

@@ -21,6 +21,7 @@
 
     <!-- Main menu -->
     <div id="menu" class="screen hidden">
+      <div class="menu-cols">
       <div class="menu-col">
         <div class="logo"><span>STUNT</span><span>RACING</span></div>
         <p class="tagline">Loops. Jumps. Banked turns. Build your own track.</p>
@@ -60,40 +61,86 @@
           </div>
         </section>
 
-        <section class="card row">
-          <header>Players</header>
-          <div class="seg" id="playersSeg">
-            <button data-players="1">1</button>
-            <button data-players="2" title="Split screen on one keyboard: P1 WASD + Space, P2 arrows + Right Shift">2</button>
+        <div class="actions">
+          <button id="btnRace" class="btn primary">Race <kbd>Enter</kbd></button>
+          <button id="btnEditor" class="btn">Track editor</button>
+          <button id="btnHelp" class="btn ghost">How to play</button>
+        </div>
+      </div>
+      </div>
+      <div class="menu-col opts">
+        <section class="card">
+          <header>Race settings</header>
+          <div class="opt">
+            <label>Laps</label>
+            <div class="seg" id="lapsSeg">
+              <button data-laps="1">1</button>
+              <button data-laps="2">2</button>
+              <button data-laps="3">3</button>
+              <button data-laps="5">5</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Players</label>
+            <div class="seg" id="playersSeg">
+              <button data-players="1">1</button>
+              <button data-players="2" title="Split screen on one keyboard: P1 WASD + Space, P2 arrows + Right Shift">2</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Opponents</label>
+            <div class="seg" id="oppSeg">
+              <button data-opp="0">0</button>
+              <button data-opp="3">3</button>
+              <button data-opp="5">5</button>
+            </div>
+          </div>
+          <div class="opt" id="aiCard">
+            <label>Opponent level</label>
+            <div class="seg" id="aiSeg">
+              <button data-ai="easy">Easy</button>
+              <button data-ai="normal">Normal</button>
+              <button data-ai="hard">Hard</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Items <span class="keys">E</span></label>
+            <div class="seg" id="itemsSeg">
+              <button data-items="off">Off</button>
+              <button data-items="on">On</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Driving</label>
+            <div class="seg" id="handlingSeg">
+              <button data-handling="arcade" title="Easy kart-style steering, hold Space while turning to drift">Arcade</button>
+              <button data-handling="classic" title="Realistic grip, Space is the handbrake">Classic</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Auto return</label>
+            <div class="seg" id="autoReturnSeg">
+              <button data-auto="off">Off</button>
+              <button data-auto="on">On</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Time</label>
+            <div class="seg" id="presetSeg">
+              <button data-preset="day">Day</button>
+              <button data-preset="sunset">Sunset</button>
+              <button data-preset="night">Night</button>
+            </div>
+          </div>
+          <div class="opt">
+            <label>Weather</label>
+            <div class="seg" id="weatherSeg">
+              <button data-weather="clear">Clear</button>
+              <button data-weather="rain">Rain</button>
+              <button data-weather="snow">Snow</button>
+            </div>
           </div>
         </section>
-
-        <section class="card row">
-          <header>Opponents</header>
-          <div class="seg" id="oppSeg">
-            <button data-opp="0">0</button>
-            <button data-opp="3">3</button>
-            <button data-opp="5">5</button>
-          </div>
-        </section>
-
-        <section class="card row">
-          <header>Items <span class="keys">E / Right Ctrl</span></header>
-          <div class="seg" id="itemsSeg">
-            <button data-items="off">Off</button>
-            <button data-items="on">On</button>
-          </div>
-        </section>
-
-        <section class="card row" id="aiCard">
-          <header>Opponent level</header>
-          <div class="seg" id="aiSeg">
-            <button data-ai="easy">Easy</button>
-            <button data-ai="normal">Normal</button>
-            <button data-ai="hard">Hard</button>
-          </div>
-        </section>
-
         <section class="card hidden" id="p2Card">
           <header>Player 2 car <span class="keys">arrows · Right Shift drift · . horn</span></header>
           <div class="picker">
@@ -105,56 +152,7 @@
             <button class="arrow" data-pick="car2" data-dir="1" aria-label="Next car for player 2">›</button>
           </div>
         </section>
-
-        <section class="card row">
-          <header>Time</header>
-          <div class="seg" id="presetSeg">
-            <button data-preset="day">Day</button>
-            <button data-preset="sunset">Sunset</button>
-            <button data-preset="night">Night</button>
-          </div>
-        </section>
-
-        <section class="card row">
-          <header>Weather</header>
-          <div class="seg" id="weatherSeg">
-            <button data-weather="clear">Clear</button>
-            <button data-weather="rain">Rain</button>
-            <button data-weather="snow">Snow</button>
-          </div>
-        </section>
-
-        <section class="card row">
-          <header>Laps</header>
-          <div class="seg" id="lapsSeg">
-            <button data-laps="1">1</button>
-            <button data-laps="2">2</button>
-            <button data-laps="3">3</button>
-            <button data-laps="5">5</button>
-          </div>
-        </section>
-
-        <section class="card row">
-          <header>Driving</header>
-          <div class="seg" id="handlingSeg">
-            <button data-handling="arcade" title="Easy kart-style steering, hold Space while turning to drift">Arcade</button>
-            <button data-handling="classic" title="Realistic grip, Space is the handbrake">Classic</button>
-          </div>
-        </section>
-
-        <section class="card row">
-          <header>Auto return to track</header>
-          <div class="seg" id="autoReturnSeg">
-            <button data-auto="off">Off</button>
-            <button data-auto="on">On</button>
-          </div>
-        </section>
-
-        <div class="actions">
-          <button id="btnRace" class="btn primary">Race <kbd>Enter</kbd></button>
-          <button id="btnEditor" class="btn">Track editor</button>
-          <button id="btnHelp" class="btn ghost">How to play</button>
-        </div>
+      </div>
       </div>
       <div class="menu-foot">
         <button id="btnQuality" class="chip">Graphics: High</button>
