@@ -17,6 +17,8 @@ const GHOST_STRIDE = 2;
 const smokeColor = new THREE.Color(0.85, 0.85, 0.86);
 const dustColor = new THREE.Color(0.55, 0.45, 0.3);
 const grassColor = new THREE.Color(0.35, 0.5, 0.2);
+const sparkBlue = new THREE.Color(0.35, 0.75, 1.6);
+const sparkOrange = new THREE.Color(1.6, 0.7, 0.15);
 
 export class Game {
   constructor(world, audio, input, hud) {
@@ -42,6 +44,8 @@ export class Game {
     this.spin = 0;
     this.attractCam = 0;
     this.ghostOn = true;
+    this.arcade = true; // kart-style handling with drift
+    this.autoReturn = false; // put the car back on the road after a while off it
   }
 
   // ------------------------------------------------------------------ setup
@@ -92,7 +96,7 @@ export class Game {
       this.physics.world.removeRigidBody(this.car.body);
     }
     const pose = this.spawnPose(0);
-    this.car = new Car(this.physics, spec, pose.pos, pose.q);
+    this.car = new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade });
     this.model = new CarModel(spec);
     this.model.setNight(this.world.preset.night);
     this.world.scene.add(this.model.group);
@@ -111,6 +115,11 @@ export class Game {
       this.ghost.group.visible = false;
       this.world.scene.add(this.ghost.group);
     }
+  }
+
+  setHandling(arcade) {
+    this.arcade = arcade;
+    if (this.car) this.car.arcade = arcade;
   }
 
   setPreset(name) {
@@ -144,6 +153,7 @@ export class Game {
     this.recN = 0;
     this.crashes = 0;
     this.flipT = 0;
+    this.offT = 0;
     this.skids.clear();
     this.particles.clear();
     this.rig.snap = true;
@@ -178,6 +188,7 @@ export class Game {
     this.skids.lift(2);
     this.skids.lift(3);
     this.flipT = 0;
+    this.offT = 0;
     this.rig.snap = true;
     if (reason) {
       this.crashes++;
@@ -261,6 +272,13 @@ export class Game {
       this.stuckT = this.mode === 'attract' && car.speed() < 1 ? (this.stuckT || 0) + DT : 0;
       if (this.stuckT > 3) this.respawn(null);
       if (p.y < -15) this.respawn('SPLASH!');
+      // Optional assist: back on the road after a moment on the grass
+      const off = ci === undefined || (car.contacts > 0 && car.onGrass > 0.7);
+      this.offT = this.mode === 'race' && this.autoReturn && off ? this.offT + DT : 0;
+      if (this.offT > 1.2) {
+        this.respawn(null);
+        this.hud.message('BACK ON TRACK', 'boost', 1);
+      }
     }
 
     // Record
@@ -309,6 +327,13 @@ export class Game {
       this.hud.message('BOOST!', 'boost', 0.7);
     }
     this.wasBoosting = car.boosting > 0.75;
+    if (car.turboEvent) {
+      if (this.mode === 'race') {
+        this.audio.whoosh();
+        this.hud.message(car.turboEvent === 2 ? 'SUPER TURBO!' : 'MINI-TURBO!', 'boost', 0.7);
+      }
+      car.turboEvent = 0;
+    }
   }
 
   emitEffects(car, v) {
@@ -335,6 +360,11 @@ export class Game {
           this.particles.emit(pt, vel.clone().multiplyScalar(0.2), Math.random() < 0.75 ? dustColor : grassColor, 0.22, 0.5, 0.9);
         }
       } else {
+        // Drift sparks behind the rear wheels: blue, then orange when the mini-turbo is charged
+        const lvl = car.drift ? car.driftLevel() : 0;
+        if (lvl && i >= 2 && Math.random() < 0.8) {
+          this.particles.emit(tmp6.copy(pt).addScaledVector(nrm, 0.15), tmp7.copy(vel).multiplyScalar(0.3), lvl === 2 ? sparkOrange : sparkBlue, 0.95, 0.35, 0.3);
+        }
         this.skids.add(i, pt, nrm, right, s > 0.3 ? s : 0);
         if (s > 0.3 && Math.random() < s * 0.8) {
           this.particles.emit(pt.addScaledVector(nrm, 0.2), vel.clone().multiplyScalar(0.15), smokeColor, 0.35 * s + 0.1, 0.8, 1.6);
@@ -516,6 +546,8 @@ const tmp2 = new THREE.Vector3();
 const tmp3 = new THREE.Vector3();
 const tmp4 = new THREE.Vector3();
 const tmp5 = new THREE.Vector3();
+const tmp6 = new THREE.Vector3();
+const tmp7 = new THREE.Vector3();
 const tmpP = new THREE.Vector3();
 const tmpQ = new THREE.Quaternion();
 const tmpV = new THREE.Vector3();

@@ -13,6 +13,7 @@ export const CARS = [
 ];
 
 export const DT = 1 / 60;
+export const DRIFT_LV = [0.4, 1.0]; // drift seconds for blue / orange mini-turbo
 const WHEELS = [
   { x: 1.32, z: -0.84, front: true },
   { x: 1.32, z: 0.84, front: true },
@@ -80,6 +81,7 @@ export class Physics {
     }
     this.boostZones = built.boostZones;
     this.loopCells = new Set(built.loops.map((l) => l.r * GRID + l.c));
+    this.turnCells = new Set(built.path.cells.filter((c) => c.type === 'curve' || c.type === 'bank').map((c) => c.r * GRID + c.c));
   }
 
   step() {
@@ -96,9 +98,11 @@ const tmpV = new Vector3();
 const tmpV2 = new Vector3();
 
 export class Car {
-  constructor(physics, spec, pos, quat) {
+  constructor(physics, spec, pos, quat, opts = {}) {
     this.physics = physics;
     this.spec = spec;
+    // Arcade handling: kart-style yaw control, strong grip and drift with mini-turbo.
+    this.arcade = opts.arcade ?? false;
     const w = physics.world;
     const bd = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pos.x, pos.y, pos.z)
@@ -135,8 +139,13 @@ export class Car {
     this.grounded = 0;
     this.boosting = 0;
     this.slip = [0, 0, 0, 0];
+    this.slideAngle = 0;
     this.landing = 0;
     this.braking = false;
+    this.drift = 0; // -1 / 1 while drifting left / right
+    this.driftCharge = 0; // seconds of drift, mini-turbo levels at DRIFT_LV
+    this.turboT = 0;
+    this.turboEvent = 0; // level of the mini-turbo just released, read by the game
   }
 
   reset(pos, quat) {
@@ -145,6 +154,13 @@ export class Car {
     this.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     this.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
     this.steer = 0;
+    this.drift = 0;
+    this.driftCharge = 0;
+    this.turboT = 0;
+  }
+
+  driftLevel() {
+    return this.driftCharge >= DRIFT_LV[1] ? 2 : this.driftCharge >= DRIFT_LV[0] ? 1 : 0;
   }
 
   forward(target = new Vector3()) {
@@ -229,12 +245,15 @@ export class Car {
     }
     this.braking = brake > 0;
     this.reversing = reversing;
+    // In arcade mode the handbrake button is the drift button
+    const hb = input.handbrake && !this.arcade;
     for (let i = 0; i < 4; i++) {
       const front = i < 2;
       v.setWheelEngineForce(i, -(front ? engine * 0.2 : engine * 0.8)); // Rapier: negative = forward
-      v.setWheelBrake(i, front ? brake * 0.6 : brake * 0.4 + (input.handbrake ? 90 : 0));
-      const slipK = !front && input.handbrake ? 0.45 : 1;
+      v.setWheelBrake(i, front ? brake * 0.6 : brake * 0.4 + (hb ? 90 : 0));
+      const slipK = !front && hb ? 0.45 : 1;
       v.setWheelFrictionSlip(i, spec.grip * slipK * (1 - this.onGrass * 0.3));
+      v.setWheelSideFrictionStiffness(i, this.drift ? 0.3 : 1);
     }
 
     // Aero: drag + downforce
@@ -297,6 +316,8 @@ export class Car {
       }
     }
 
+    if (this.arcade) this.arcadeAssist(input, contacts, fwd, upv);
+
     v.updateVehicle(dt);
 
     // Slip estimate per wheel for smoke / skids / audio
@@ -310,9 +331,75 @@ export class Car {
       const rear = i >= 2;
       let s = Math.max(0, lat - 3.5) / 8;
       if (this.braking && Math.abs(fspeed) > 4) s += 0.5 * input.brake;
-      if (rear && input.handbrake && speed > 3) s += 0.7;
+      if (rear && hb && speed > 3) s += 0.7;
+      if (rear && this.drift) s += 0.4;
       if (rear && input.throttle > 0.5 && fspeed < 12 && fspeed > -1) s += 0.35 * (1 - fspeed / 12);
       this.slip[i] = Math.min(1, s);
     }
+  }
+
+  // Kart-style handling: steering sets the yaw rate directly, sideways speed is
+  // turned into forward speed, and holding the drift button while steering slides
+  // the car into the turn and charges a mini-turbo released with the button.
+  arcadeAssist(input, contacts, fwd, upv) {
+    const body = this.body;
+    const dt = DT;
+    const m = this.spec.mass;
+    const lv = body.linvel();
+    const vel = tmpV.set(lv.x, lv.y, lv.z);
+    const speed = vel.length();
+    const vf = vel.dot(fwd);
+    const grounded = contacts >= 3 && !this.inLoop;
+
+    // Turns stick to the road: a banked curve taken flat out must not act as a ramp
+    const bp = body.translation();
+    if (this.airTime < 0.3 && this.physics.turnCells.has(Math.floor(bp.z / T) * GRID + Math.floor(bp.x / T))) {
+      const k = m * 14 * dt;
+      body.applyImpulse({ x: -upv.x * k, y: -upv.y * k, z: -upv.z * k }, true);
+    }
+
+    // Drift state
+    if (!input.handbrake || vf < 7 || this.airTime > 0.4) {
+      const lv = this.driftLevel();
+      if (this.drift && lv && !input.handbrake) {
+        this.turboT = lv === 2 ? 1.1 : 0.6;
+        this.turboEvent = lv;
+      }
+      this.drift = 0;
+      this.driftCharge = 0;
+    } else if (!this.drift && grounded && Math.abs(input.steer) > 0.3 && vf > 9) {
+      this.drift = Math.sign(input.steer);
+      body.applyImpulse({ x: upv.x * m * 2.2, y: upv.y * m * 2.2, z: upv.z * m * 2.2 }, true); // hop
+    }
+    if (this.drift && grounded) this.driftCharge += dt * (0.8 + 0.4 * Math.max(0, input.steer * this.drift));
+
+    if (this.turboT > 0) {
+      this.turboT -= dt;
+      this.boosting = Math.max(this.boosting, 0.3);
+      if (contacts > 0) body.applyImpulse({ x: fwd.x * m * 15 * dt, y: fwd.y * m * 15 * dt, z: fwd.z * m * 15 * dt }, true);
+    }
+    if (!grounded) return;
+
+    // Yaw rate from steering (reversed when backing up). Into the drift tightens, counter-steer widens.
+    const k = this.drift ? -this.drift * (0.7 + 0.5 * input.steer * this.drift) : -input.steer;
+    // Max yaw rate grows with speed so a 90° tile curve is takeable flat out (radius ~13 m at top speed)
+    const yawMax = Math.min(3.4, 0.9 + speed / 18) * (this.drift ? 1.15 : 1) * Math.min(1, speed / 4) * (1 - this.onGrass * 0.25);
+    const target = k * yawMax * (vf < -0.5 ? -1 : 1);
+    const av = body.angvel();
+    const w = tmpV2.set(av.x, av.y, av.z);
+    w.addScaledVector(upv, (target - w.dot(upv)) * Math.min(1, dt * 10));
+    w.addScaledVector(fwd, -w.dot(fwd) * Math.min(1, dt * 4)); // roll damping
+    body.setAngvel({ x: w.x, y: w.y, z: w.z }, true);
+
+    // Grip: bleed sideways speed and hand most of it to forward speed
+    const right = tmpV2.set(0, 0, 1).applyQuaternion(tmpQ.set(body.rotation().x, body.rotation().y, body.rotation().z, body.rotation().w));
+    const vr = vel.dot(right);
+    // Hard steering at speed lets the tail step out a little, even without drifting
+    const slide = Math.abs(input.steer) * Math.min(1, speed / 35);
+    const vr2 = vr * Math.exp(-(this.drift ? 2.2 : 9 - 5 * slide) * dt);
+    const gain = Math.abs(vf) > 3 ? 0.9 : 0;
+    const vf2 = Math.sign(vf) * Math.sqrt(vf * vf + (vr * vr - vr2 * vr2) * gain);
+    vel.addScaledVector(right, vr2 - vr).addScaledVector(fwd, vf2 - vf);
+    body.setLinvel({ x: vel.x, y: vel.y, z: vel.z }, true);
   }
 }

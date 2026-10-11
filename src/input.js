@@ -49,7 +49,7 @@ export class Input {
     let throttle = k.has('ArrowUp', 'KeyW', 'KeyZ') || this.touch.gas ? 1 : 0;
     let brake = k.has('ArrowDown', 'KeyS') || this.touch.brake ? 1 : 0;
     let target = (k.has('ArrowRight', 'KeyD') || this.touch.right ? 1 : 0) - (k.has('ArrowLeft', 'KeyA', 'KeyQ') || this.touch.left ? 1 : 0);
-    let handbrake = k.has('Space') || this.touch.hb;
+    let handbrake = k.has('Space', 'ShiftLeft', 'ShiftRight') || this.touch.hb;
 
     // Gamepad
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];

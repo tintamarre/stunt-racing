@@ -36,7 +36,7 @@ async function boot() {
   input.bindTouch($('touch'));
   const hud = new Hud();
   const game = new Game(world, audio, input, hud);
-  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, ...prefStore.load() };
+  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, ...prefStore.load() };
 
   // Track list: built-ins, the player's tracks, and a shared one from the URL
   let tracks = [];
@@ -71,7 +71,7 @@ async function boot() {
     const p = game.path;
     const count = (id) => track.cells.filter((c) => TYPES[c.t].id === id).length;
     $('trackName').textContent = track.name;
-    const bits = [`${p.cells.length} tiles`];
+    const bits = [...(track.level ? [track.level] : []), `${p.cells.length} tiles`];
     if (count('loop')) bits.push(`${count('loop')} loop${count('loop') > 1 ? 's' : ''}`);
     const jumps = count('jump') + count('ramp');
     if (jumps) bits.push(`${jumps} jump${jumps > 1 ? 's' : ''}`);
@@ -104,6 +104,21 @@ async function boot() {
     savePrefs();
     game.setPreset(name);
     document.querySelectorAll('#presetSeg button').forEach((b) => b.classList.toggle('on', b.dataset.preset === name));
+  }
+
+  function selectHandling(name) {
+    prefs.handling = name;
+    savePrefs();
+    game.setHandling(name === 'arcade');
+    $('tDrift').textContent = name === 'arcade' ? 'DRIFT' : 'HB';
+    document.querySelectorAll('#handlingSeg button').forEach((b) => b.classList.toggle('on', b.dataset.handling === name));
+  }
+
+  function selectAutoReturn(on) {
+    prefs.autoReturn = on;
+    savePrefs();
+    game.autoReturn = on;
+    document.querySelectorAll('#autoReturnSeg button').forEach((b) => b.classList.toggle('on', (b.dataset.auto === 'on') === on));
   }
 
   function toMenu() {
@@ -166,6 +181,8 @@ async function boot() {
     }),
   );
   document.querySelectorAll('#presetSeg button').forEach((b) => b.addEventListener('click', () => selectPreset(b.dataset.preset)));
+  document.querySelectorAll('#handlingSeg button').forEach((b) => b.addEventListener('click', () => selectHandling(b.dataset.handling)));
+  document.querySelectorAll('#autoReturnSeg button').forEach((b) => b.addEventListener('click', () => selectAutoReturn(b.dataset.auto === 'on')));
   $('btnRace').onclick = race;
   $('btnEditor').onclick = () => {
     show();
@@ -284,6 +301,8 @@ async function boot() {
   window.addEventListener('pointerdown', () => audio.unlock(), { once: false });
 
   // Start
+  selectHandling(prefs.handling);
+  selectAutoReturn(prefs.autoReturn);
   selectCar(prefs.car);
   selectPreset(prefs.preset);
   selectTrack(trackIdx);

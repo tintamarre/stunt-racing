@@ -40,6 +40,28 @@ const forest = (cells) => cells.map(([c, r]) => [c, r, 'trees']);
 const houses = (cells) => cells.map(([c, r]) => [c, r, 'house']);
 
 export const BUILTIN = [
+  // Beginner tracks: long straights, flat turns (banks hump in the middle), no loops or jumps
+  fromPath(
+    'Easy Oval',
+    5, 3, 'E',
+    `F S S B S S S S R
+     S S S S S R
+     S S S S S S S S S S R
+     S S S S S R
+     S S`,
+    [...forest([[5, 5], [6, 6], [9, 5], [10, 7], [7, 7], [12, 12], [0, 0], [15, 1]]), ...houses([[4, 6], [11, 5], [6, 12]])],
+  ),
+  fromPath(
+    'Green Valley',
+    4, 3, 'E',
+    `F S B S S S R
+     S S S L
+     S R
+     S S H S R
+     S S S H S S S S R
+     S S S S S S S S R`,
+    [...forest([[5, 5], [6, 7], [8, 9], [5, 10], [9, 6], [14, 3], [1, 13]]), ...houses([[7, 5], [10, 10], [13, 14]])],
+  ),
   fromPath(
     'Sunday Drive',
     3, 3, 'E',
@@ -71,3 +93,6 @@ export const BUILTIN = [
     [...forest([[5, 3], [6, 4], [8, 6], [9, 7], [11, 5], [6, 9], [7, 10], [10, 11], [12, 9], [0, 0], [15, 15], [0, 15]]), ...houses([[4, 7], [8, 9], [11, 12], [6, 12]])],
   ),
 ];
+
+const LEVELS = ['Easy', 'Easy', 'Medium', 'Medium', 'Hard'];
+BUILTIN.forEach((t, i) => (t.level = LEVELS[i]));

@@ -69,6 +69,22 @@
           </div>
         </section>
 
+        <section class="card row">
+          <header>Driving</header>
+          <div class="seg" id="handlingSeg">
+            <button data-handling="arcade" title="Easy kart-style steering, hold Space while turning to drift">Arcade</button>
+            <button data-handling="classic" title="Realistic grip, Space is the handbrake">Classic</button>
+          </div>
+        </section>
+
+        <section class="card row">
+          <header>Auto return to track</header>
+          <div class="seg" id="autoReturnSeg">
+            <button data-auto="off">Off</button>
+            <button data-auto="on">On</button>
+          </div>
+        </section>
+
         <div class="actions">
           <button id="btnRace" class="btn primary">Race <kbd>Enter</kbd></button>
           <button id="btnEditor" class="btn">Track editor</button>
@@ -116,7 +132,7 @@
         <button data-touch="right" aria-label="Steer right">▶</button>
       </div>
       <div class="t-right">
-        <button data-touch="hb" class="small" aria-label="Handbrake">HB</button>
+        <button data-touch="hb" class="small" id="tDrift" aria-label="Drift">DRIFT</button>
         <button data-touch="brake" aria-label="Brake">▼</button>
         <button data-touch="gas" class="gas" aria-label="Accelerate">▲</button>
       </div>
@@ -170,12 +186,13 @@
           <div><kbd>↑</kbd>/<kbd>W</kbd></div><div>Accelerate (in the air: lean forward)</div>
           <div><kbd>↓</kbd>/<kbd>S</kbd></div><div>Brake / reverse (in the air: lean back)</div>
           <div><kbd>←</kbd><kbd>→</kbd>/<kbd>A</kbd><kbd>D</kbd></div><div>Steer (in the air: spin)</div>
-          <div><kbd>Space</kbd></div><div>Handbrake — drift!</div>
+          <div><kbd>Space</kbd>/<kbd>Shift</kbd></div><div>Arcade: hold while steering to drift, release for a mini-turbo (blue sparks, then orange for a super turbo). Classic: handbrake</div>
           <div><kbd>C</kbd></div><div>Change camera (chase, bumper, TV, heli, cinematic)</div>
           <div><kbd>R</kbd></div><div>Put the car back on the track</div>
           <div><kbd>G</kbd></div><div>Show / hide your best-lap ghost</div>
           <div><kbd>Esc</kbd></div><div>Pause</div>
         </div>
+        <p>New to the game? Pick an <b>Easy</b> track with <b>Arcade</b> driving: you can take the turns flat out. Turn on <b>Auto return to track</b> to be put back on the road when you leave it.</p>
         <p>Drive over <b>every tile</b> of the track, then cross the finish line. Blue <b>boost pads</b> push you forward — use them before loops! Gamepads and touch screens work too.</p>
         <button class="btn primary" data-act="close">Got it</button>
       </div>

@@ -6,8 +6,10 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 
 ## Features
 
-- Real-time vehicle physics (Rapier raycast vehicle) with drifting, air control and a loop assist.
-- Three cars, three built-in tracks, day / sunset / night lighting.
+- Real-time vehicle physics (Rapier raycast vehicle) with air control and a loop assist.
+- Two driving modes: **Arcade** (default, kart-style: turns can be taken flat out, hold the drift button for a mini-turbo) and **Classic** (realistic grip, handbrake).
+- Optional *Auto return to track*: puts the car back on the road after a moment on the grass (off by default).
+- Three cars, five built-in tracks (two easy ones for beginners), day / sunset / night lighting.
 - Track editor: paint tiles on a 16×16 board, test-drive instantly, save locally or copy a share link (the whole track is encoded in the URL).
 - Best-lap ghost per track, full replay with TV / chase / heli / cinematic cameras.
 - Keyboard, gamepad and touch controls.
@@ -19,7 +21,7 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 | ↑ / W | Accelerate (in the air: lean forward) |
 | ↓ / S | Brake, reverse (in the air: lean back) |
 | ← → / A D | Steer (in the air: spin) |
-| Space | Handbrake |
+| Space / Shift | Arcade: drift (release for a mini-turbo). Classic: handbrake |
 | C | Change camera |
 | R | Put the car back on the track |
 | G | Toggle ghost |
@@ -32,7 +34,8 @@ Requires Node 22+.
 ```sh
 npm install
 npm run dev      # http://localhost:5173
-npm test         # headless physics test: the autopilot drives every track with every car
+npm test         # headless physics tests: the autopilot drives every track with every car in both modes,
+                 # and a flat-out novice driver must finish the easy tracks in arcade mode
 npm run build    # static build in dist/
 ```
 
@@ -53,3 +56,4 @@ Vanilla JavaScript + [Vite](https://vite.dev), [three.js](https://threejs.org) f
 | `src/game.js` | Game loop, race rules, recording, replays, ghosts |
 | `src/editor.js` | Track editor |
 | `tests/sim.mjs` | Headless lap test |
+| `tests/novice.mjs` | Full-throttle, never-brake driver: checks the easy tracks stay easy |

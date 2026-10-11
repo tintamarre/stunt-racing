@@ -11,12 +11,12 @@ let failed = 0;
 const only = process.argv[2];
 for (const [ti, track] of BUILTIN.entries()) {
   if (only && String(ti) !== only) continue;
-  for (const spec of CARS) {
+  for (const [spec, arcade] of CARS.flatMap((c) => [[c, true], [c, false]])) {
     const built = buildTrack(track);
     const phys = new Physics(built);
     const s = built.path.cells[0];
     const xf = cellTransform(s.c, s.r, s.rot);
-    const car = new Car(phys, spec, xf.point(new Vector3(-8, 1.2, 0)), xf.q);
+    const car = new Car(phys, spec, xf.point(new Vector3(-8, 1.2, 0)), xf.q, { arcade });
     const ap = new Autopilot(built.path);
     const visited = new Set();
     const cellIdx = new Map(built.path.cells.map((c, i) => [c.r * 16 + c.c, i]));
@@ -47,11 +47,11 @@ for (const [ti, track] of BUILTIN.entries()) {
       if (visited.size === built.path.cells.length && ci === 0) { status = 'ok'; break; }
     }
     if (status !== 'ok') failed++;
-    console.log(`${track.name.padEnd(14)} ${spec.name.padEnd(11)} ${status.padEnd(8)} t=${t.toFixed(1)}s visited=${visited.size}/${built.path.cells.length} vmax=${(maxV * 3.6).toFixed(0)}km/h loopTop=${loopMinTop.toFixed(1)}`);
+    console.log(`${track.name.padEnd(14)} ${spec.name.padEnd(11)} ${arcade ? 'arcade' : 'classic'} ${status.padEnd(8)} t=${t.toFixed(1)}s visited=${visited.size}/${built.path.cells.length} vmax=${(maxV * 3.6).toFixed(0)}km/h loopTop=${loopMinTop.toFixed(1)}`);
     if (status !== 'ok' || process.env.VERBOSE) console.log('   ', log.slice(-8).join(' | '));
     phys.free();
   }
 }
 // The autopilot is not perfect; a couple of failed laps are tolerated, more means a physics regression.
 console.log(`${failed} failed run(s)`);
-process.exit(failed > 2 ? 1 : 0);
+process.exit(failed > 4 ? 1 : 0);
