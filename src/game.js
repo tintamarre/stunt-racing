@@ -23,6 +23,16 @@ const leafColor = new THREE.Color(0.3, 0.6, 0.18);
 const woodColor = new THREE.Color(0.45, 0.3, 0.17);
 const sparkOrange = new THREE.Color(1.6, 0.7, 0.15);
 
+// AI opponents
+const BOT_NAMES = ['Turbo Tom', 'Lucky Lou', 'Dizzy Dee', 'Max Power', 'Speedy Sue', 'Rusty Rex'];
+const BOT_COLORS = [0x8e44ff, 0x18b8a0, 0xff7a1f, 0xe0e0e0, 0x2c2c34, 0xff4fa0];
+export const AI_LEVELS = {
+  easy: { speedK: 0.88, wobble: 0.15, band: 0.6 },
+  normal: { speedK: 1.0, wobble: 0.08, band: 1 },
+  hard: { speedK: 1.1, wobble: 0.03, band: 1.3 },
+};
+const NO_HUD = { message() {} };
+
 export class Game {
   constructor(world, audio, input, hud) {
     this.world = world;
@@ -56,15 +66,72 @@ export class Game {
     this.p2 = null;
     this.slot = 1;
     this.skids2 = new Skids(world.scene);
+    this.opponents = 3;
+    this.aiLevel = 'normal';
+    this.bots = [];
   }
 
+  // Human players (they own a camera and a HUD)
   racers() {
     return this.p2 ? [this, this.p2] : [this];
+  }
+
+  // Everybody on track: humans first, then the AI opponents
+  everyone() {
+    return this.bots.length ? [...this.racers(), ...this.bots] : this.racers();
+  }
+
+  setOpponents(n, level = this.aiLevel) {
+    this.opponents = n;
+    this.aiLevel = level;
+  }
+
+  spawnBots() {
+    this.removeBots();
+    const taken = new Set([this.carIdx, ...(this.players === 2 ? [this.car2Idx] : [])]);
+    const pool = CARS.map((_, i) => i).filter((i) => !taken.has(i));
+    const lvl = AI_LEVELS[this.aiLevel] || AI_LEVELS.normal;
+    for (let i = 0; i < this.opponents; i++) {
+      const carIdx = pool[i % pool.length];
+      // Same car twice: repaint the second one
+      const spec = i < pool.length ? CARS[carIdx] : { ...CARS[carIdx], color: BOT_COLORS[i % BOT_COLORS.length] };
+      const pose = this.spawnPose(0);
+      const bot = {
+        bot: true,
+        slot: 0,
+        name: BOT_NAMES[i % BOT_NAMES.length],
+        carIdx,
+        car: new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade }),
+        model: new CarModel(spec),
+        autopilot: new Autopilot(this.path, { speedK: lvl.speedK * (0.97 + 0.06 * Math.random()), wobble: lvl.wobble, lane: ((i % 3) - 1) * 2.2, arcade: this.arcade }),
+        rig: { shake: 0, snap: false },
+        hud: NO_HUD,
+        skids: null,
+        prev: { p: new THREE.Vector3(), q: new THREE.Quaternion() },
+        curr: { p: new THREE.Vector3(), q: new THREE.Quaternion() },
+        spin: 0,
+      };
+      bot.model.setNight(this.world.preset.night);
+      this.world.scene.add(bot.model.group);
+      this.bots.push(bot);
+    }
+  }
+
+  removeBots() {
+    for (const b of this.bots) {
+      this.world.scene.remove(b.model.group);
+      if (b.car.physics === this.physics) {
+        this.physics.world.removeVehicleController?.(b.car.vehicle);
+        this.physics.world.removeRigidBody(b.car.body);
+      }
+    }
+    this.bots = [];
   }
 
   // ------------------------------------------------------------------ setup
   loadTrack(track) {
     this.removeP2();
+    this.removeBots();
     this.track = track;
     this.code = encodeTrack(track);
     const built = buildTrack(track);
@@ -96,14 +163,26 @@ export class Game {
   }
 
   spawnPose(ci, lat = 0) {
-    const pts = this.path.points;
-    let k = pts.findIndex((p) => p.cell === ci);
+    let k = this.path.points.findIndex((p) => p.cell === ci);
     if (ci === 0) k += 3;
-    const p = pts[Math.max(0, k)];
+    return this.poseAt(Math.max(0, k), lat);
+  }
+
+  poseAt(k, lat = 0) {
+    const p = this.path.points[k];
     const z = new THREE.Vector3().crossVectors(p.f, p.up).normalize();
     const up = new THREE.Vector3().crossVectors(z, p.f).normalize();
     const q = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(p.f, up, z));
-    return { pos: p.p.clone().addScaledVector(up, 1.0).addScaledVector(z, lat), q };
+    return { pos: p.p.clone().addScaledVector(up, 1.0).addScaledVector(z, lat), q, k };
+  }
+
+  // Starting grid: two abreast, 8 m between rows, extending back behind the start line
+  gridPose(slot, alone) {
+    const pts = this.path.points;
+    const N = pts.length;
+    let k = pts.findIndex((p) => p.cell === 0) + 3 - Math.floor(slot / 2) * 4;
+    k = this.path.closed ? (k + N) % N : Math.max(0, k);
+    return this.poseAt(k, alone ? 0 : slot % 2 ? 2.6 : -2.6);
   }
 
   // ------------------------------------------------------------------ split screen
@@ -230,13 +309,15 @@ export class Game {
     this.recN = 0;
     this.particles.clear();
     this.finishedAt = null;
-    for (const pl of this.racers()) {
-      const pose = this.spawnPose(0, this.p2 ? (pl === this ? -2.5 : 2.5) : 0);
+    // Opponents in front, humans at the back of the grid
+    const grid = [...this.bots, ...this.racers()];
+    for (const pl of grid) {
+      const pose = this.gridPose(grid.indexOf(pl), grid.length === 1);
       pl.car.reset(pose.pos, pose.q);
       this.syncTransforms(true, pl);
-      pl.autopilot.reset();
+      pl.autopilot.reset(pose.k);
+      pl.lastCi = this.path.points[pose.k].cell;
       pl.visited = new Set([0]);
-      pl.lastCi = 0;
       pl.raceTime = 0;
       pl.lap = 1;
       pl.lapStart = 0;
@@ -244,7 +325,7 @@ export class Game {
       pl.crashes = 0;
       pl.flipT = 0;
       pl.offT = 0;
-      pl.skids.clear();
+      pl.skids?.clear();
       pl.rig.snap = true;
       pl.prevLocalX = -99;
       pl.loopFlag = false;
@@ -256,6 +337,7 @@ export class Game {
 
   startAttract() {
     this.removeP2();
+    this.removeBots();
     this.mode = 'attract';
     this.resetRun();
     this.rig.mode = CAM_MODES.indexOf('Cinematic');
@@ -265,6 +347,8 @@ export class Game {
   startRace() {
     if (this.players === 2) this.spawnP2();
     else this.removeP2();
+    if (this.opponents > 0 && this.path.closed) this.spawnBots();
+    else this.removeBots();
     this.resetRun();
     this.mode = 'countdown';
     this.countdown = 3.2;
@@ -285,17 +369,14 @@ export class Game {
     const pose = this.spawnPose(pl.lastCi);
     pl.car.reset(pose.pos, pose.q);
     this.syncTransforms(true, pl);
-    pl.skids.lift(0);
-    pl.skids.lift(1);
-    pl.skids.lift(2);
-    pl.skids.lift(3);
+    for (let i = 0; i < 4; i++) pl.skids?.lift(i);
     pl.flipT = 0;
     pl.offT = 0;
     pl.rig.snap = true;
     if (reason) {
       pl.crashes++;
       pl.hud.message(reason, 'crash', 1.4);
-      this.audio.impact(1);
+      if (!pl.bot) this.audio.impact(1);
     }
   }
 
@@ -326,19 +407,22 @@ export class Game {
 
   // ------------------------------------------------------------------ simulation
   physicsStep() {
-    const pls = this.racers();
+    const pls = this.everyone();
+    if (this.bots.length && this.mode === 'race') this.rubberBand();
     for (const pl of pls) {
       const car = pl.car;
       const slot = this.p2 ? pl.slot : 0;
       let inp;
-      if (this.mode === 'race' && !pl.done) inp = this.input.read(DT, slot);
+      if (pl.bot) {
+        inp = this.mode === 'race' || this.mode === 'finished' ? pl.autopilot.input(car) : { throttle: 0, brake: 0, steer: 0, handbrake: true, hold: true };
+      } else if (this.mode === 'race' && !pl.done) inp = this.input.read(DT, slot);
       else if (this.mode === 'attract' || this.mode === 'finished' || pl.done) inp = pl.autopilot.input(car);
       else {
         const raw = this.input.read(DT, slot);
         inp = { throttle: 0, brake: 0, steer: raw.steer, handbrake: true, hold: true };
         pl.revThrottle = raw.throttle;
       }
-      if (this.mode === 'finished' || pl.done) inp.throttle *= 0.6;
+      if ((this.mode === 'finished' && !pl.bot) || pl.done) inp.throttle *= 0.6;
       pl.lastInput = inp;
       car.update(inp);
       if (this.mode === 'race' || this.mode === 'finished') {
@@ -350,6 +434,16 @@ export class Game {
     if (this.p2 && this.mode === 'race') this.checkSplitEnd();
   }
 
+  // Opponents speed up a little when behind the best human and ease off when ahead
+  rubberBand() {
+    const lead = Math.max(...this.racers().map((pl) => pl.progress || 0));
+    const k = (AI_LEVELS[this.aiLevel] || AI_LEVELS.normal).band;
+    for (const b of this.bots) {
+      const gap = (lead - (b.progress || 0)) / 1000; // in tiles
+      b.autopilot.band = 1 + Math.max(-0.1, Math.min(0.14, gap * 0.02)) * k;
+    }
+  }
+
   afterStep(pl) {
     const car = pl.car;
     this.syncTransforms(false, pl);
@@ -359,12 +453,14 @@ export class Game {
 
     // Race rules
     const ci = this.cellIndex.get(Math.floor(p.z / T) * GRID + Math.floor(p.x / T));
-    if (this.mode === 'race' || this.mode === 'attract') {
+    // Opponents keep racing after the player has finished
+    const racing = this.mode === 'race' || (this.mode === 'finished' && pl.bot);
+    if (racing || this.mode === 'attract') {
       if (ci !== undefined) {
         pl.visited.add(ci);
         pl.lastCi = ci;
       }
-      if (this.mode === 'race') {
+      if (racing) {
         if (!pl.done) pl.raceTime += DT;
         const lx = tmp.copy(p).sub(this.startCenter).dot(this.startDir);
         const done = this.path.closed
@@ -379,9 +475,9 @@ export class Game {
           pl.visited = new Set([0]);
           const last = pl.lap === this.lapCount();
           pl.hud.message(last ? 'FINAL LAP!' : `LAP ${pl.lap}/${this.lapCount()}`, last ? 'crash' : 'go', 1.2);
-          this.audio.beep(last ? 880 : 660, 0.25);
-        } else if (done) {
-          if (this.p2) this.finishPlayer(pl);
+          if (!pl.bot) this.audio.beep(last ? 880 : 660, 0.25);
+        } else if (done && !pl.done) {
+          if (pl.bot || this.p2) this.finishPlayer(pl);
           else this.finish();
         }
       } else if (pl.visited.size === this.path.cells.length && ci === 0) {
@@ -394,20 +490,20 @@ export class Game {
       else pl.flipT = 0;
       if (pl.flipT > 1.3) this.respawn('CRASH!', pl);
       // The attract-mode driver cannot reverse out of a wall
-      pl.stuckT = this.mode === 'attract' && car.speed() < 1 ? (pl.stuckT || 0) + DT : 0;
+      pl.stuckT = (this.mode === 'attract' || pl.bot) && car.speed() < 1 ? (pl.stuckT || 0) + DT : 0;
       if (pl.stuckT > 3) this.respawn(null, pl);
       if (p.y < -15) this.respawn('SPLASH!', pl);
       // Optional assist: back on the road after a moment on the grass
       const off = ci === undefined || (car.contacts > 0 && car.onGrass > 0.7);
-      pl.offT = this.mode === 'race' && this.autoReturn && off ? pl.offT + DT : 0;
-      if (pl.offT > 1.2) {
+      pl.offT = racing && (this.autoReturn || pl.bot) && off ? pl.offT + DT : 0;
+      if (pl.offT > (pl.bot ? 2.5 : 1.2)) {
         this.respawn(null, pl);
         pl.hud.message('BACK ON TRACK', 'boost', 1);
       }
     }
 
     // Record
-    if (this.p2) pl.progress = pl.done ? 1e9 - pl.finishTime : (pl.lap - 1) * 1e5 + pl.visited.size * 1e3 + this.cellProgress(pl, p);
+    if (this.p2 || this.bots.length) pl.progress = pl.done ? 1e9 - pl.finishTime : (pl.lap - 1) * 1e5 + pl.visited.size * 1e3 + this.cellProgress(pl, p);
     if (pl === this && !this.p2 && (this.mode === 'race' || this.mode === 'finished') && this.recN < MAX_FRAMES) {
       const o = this.recN * FR;
       const f = this.rec;
@@ -431,7 +527,7 @@ export class Game {
     this.emitEffects(car, v, pl.skids);
     if (car.landing > 0) {
       pl.rig.shake = Math.max(pl.rig.shake, car.landing * 0.5);
-      this.audio.impact(car.landing);
+      if (!pl.bot) this.audio.impact(car.landing);
       car.landing = 0;
       if (this.mode === 'race') {
         const upright = car.up(tmp).y > 0.6;
@@ -443,18 +539,18 @@ export class Game {
     if (car.inLoop && car.up(tmp).y < -0.7) pl.loopFlag = true;
     if (!car.inLoop && pl.loopFlag) {
       pl.loopFlag = false;
-      if (this.mode === 'race' && car.up(tmp).y > 0.6) {
+      if (this.mode === 'race' && car.up(tmp).y > 0.6 && !pl.bot) {
         pl.hud.message('LOOP!', 'air', 1);
         this.audio.whoosh();
       }
     }
-    if (car.boosting > 0.75 && !pl.wasBoosting) {
+    if (car.boosting > 0.75 && !pl.wasBoosting && !pl.bot) {
       this.audio.whoosh();
       pl.hud.message('BOOST!', 'boost', 0.7);
     }
     pl.wasBoosting = car.boosting > 0.75;
     if (car.turboEvent) {
-      if (this.mode === 'race') {
+      if (this.mode === 'race' && !pl.bot) {
         this.audio.whoosh();
         pl.hud.message(car.turboEvent === 2 ? 'SUPER TURBO!' : 'MINI-TURBO!', 'boost', 0.7);
       }
@@ -483,9 +579,17 @@ export class Game {
     pl.done = true;
     pl.finishTime = pl.raceTime;
     pl.lapTimes.push(pl.raceTime - pl.lapStart);
-    const first = this.racers().filter((o) => o.done).length === 1;
-    pl.hud.message(first ? 'WINNER!' : 'FINISH', first ? 'go' : 'count', 1.6);
-    this.audio.beep(first ? 988 : 660, 0.5);
+    if (pl.bot) return;
+    const place = this.everyone().filter((o) => o.done).length;
+    pl.hud.message(place === 1 ? 'WINNER!' : `${ordinal(place)} PLACE`, place === 1 ? 'go' : 'count', 1.6);
+    this.audio.beep(place === 1 ? 988 : 660, 0.5);
+  }
+
+  // Everybody ranked: finishers by time, then the others by progress
+  standings() {
+    return [...this.everyone()]
+      .sort((a, b) => (a.done && b.done ? a.finishTime - b.finishTime : a.done ? -1 : b.done ? 1 : (b.progress || 0) - (a.progress || 0)))
+      .map((pl) => ({ name: pl.name, car: pl.carIdx, time: pl.done ? pl.finishTime : null, human: !pl.bot, lapTimes: pl.lapTimes, crashes: pl.crashes }));
   }
 
   // Two-player race ends when both are home, or 30 s after the winner
@@ -498,7 +602,7 @@ export class Game {
     this.mode = 'finished';
     const results = pls.map((pl) => ({ name: pl.name, car: pl.carIdx, time: pl.done ? pl.finishTime : null, lapTimes: pl.lapTimes, crashes: pl.crashes }));
     const ranked = [...results].sort((a, b) => (a.time ?? Infinity) - (b.time ?? Infinity));
-    this.hud.finish({ split: true, track: this.track.name, results, winner: results.indexOf(ranked[0]) });
+    this.hud.finish({ split: true, track: this.track.name, results, winner: results.indexOf(ranked[0]), standings: this.bots.length ? this.standings() : null });
   }
 
   fellTree(i, pl = this) {
@@ -522,7 +626,7 @@ export class Game {
     const right = car.right(tmp3);
     for (let i = 0; i < 4; i++) {
       if (!v.wheelIsInContact(i)) {
-        skids.lift(i);
+        skids?.lift(i);
         continue;
       }
       const cp = v.wheelContactPoint(i);
@@ -534,7 +638,7 @@ export class Game {
       const grass = g && g.handle === this.physics.ground.handle;
       const s = car.slip[i];
       if (grass) {
-        skids.lift(i);
+        skids?.lift(i);
         const sp = car.speed();
         if (sp > 6 && Math.random() < Math.min(0.5, sp / 60)) {
           this.particles.emit(pt, vel.clone().multiplyScalar(0.2), Math.random() < 0.75 ? dustColor : grassColor, 0.22, 0.5, 0.9);
@@ -545,7 +649,7 @@ export class Game {
         if (lvl && i >= 2 && Math.random() < 0.8) {
           this.particles.emit(tmp6.copy(pt).addScaledVector(nrm, 0.15), tmp7.copy(vel).multiplyScalar(0.3), lvl === 2 ? sparkOrange : sparkBlue, 0.95, 0.35, 0.3);
         }
-        skids.add(i, pt, nrm, right, s > 0.3 ? s : 0);
+        skids?.add(i, pt, nrm, right, s > 0.3 ? s : 0);
         if (s > 0.3 && Math.random() < s * 0.8) {
           this.particles.emit(pt.addScaledVector(nrm, 0.2), vel.clone().multiplyScalar(0.15), smokeColor, 0.35 * s + 0.1, 0.8, 1.6);
         }
@@ -557,6 +661,10 @@ export class Game {
     this.mode = 'finished';
     const time = this.raceTime;
     this.lapTimes.push(time - this.lapStart);
+    this.done = true;
+    this.finishTime = time;
+    const place = this.bots.length ? this.everyone().filter((o) => o.done).length : 0;
+    if (place) this.hud.message(place === 1 ? 'WINNER!' : `${ordinal(place)} PLACE`, place === 1 ? 'go' : 'count', 1.6);
     const prevBest = this.record?.time;
     const isBest = !prevBest || time < prevBest;
     if (isBest) {
@@ -567,7 +675,7 @@ export class Game {
       records.put(this.recordKey(), this.record);
     }
     this.audio.beep(988, 0.5);
-    this.hud.finish({ time, prevBest, isBest, crashes: this.crashes, track: this.track.name, lapTimes: this.lapTimes });
+    this.hud.finish({ time, prevBest, isBest, crashes: this.crashes, track: this.track.name, lapTimes: this.lapTimes, place, standings: place ? this.standings() : null });
   }
 
   // ------------------------------------------------------------------ per frame
@@ -576,6 +684,7 @@ export class Game {
     this.clock += dt;
     const sim = this.mode === 'attract' || this.mode === 'countdown' || this.mode === 'race' || this.mode === 'finished';
     const pls = this.racers();
+    const all = this.everyone();
     const states = [];
     if (sim) {
       if (this.mode === 'countdown') {
@@ -602,7 +711,7 @@ export class Game {
       }
       if (steps === 6) this.acc = 0;
       const a = this.acc / DT;
-      for (const pl of pls) {
+      for (const pl of all) {
         const v = pl.car.vehicle;
         states.push({
           p: new THREE.Vector3().copy(pl.prev.p).lerp(pl.curr.p, a),
@@ -635,7 +744,7 @@ export class Game {
       states.push(state);
     } else {
       // paused: keep last pose
-      for (const pl of pls) {
+      for (const pl of all) {
         states.push({
           p: pl.curr.p,
           q: pl.curr.q,
@@ -646,7 +755,10 @@ export class Game {
       }
     }
 
-    pls.forEach((pl, i) => {
+    all.forEach((pl, i) => {
+      // Opponents aren't recorded, so they sit out the replay
+      pl.model.group.visible = !!states[i];
+      if (!states[i]) return;
       pl.model.group.position.copy(states[i].p);
       pl.model.group.quaternion.copy(states[i].q);
       pl.model.apply(states[i], this.clock);
@@ -655,7 +767,7 @@ export class Game {
 
     // Ghost
     if (this.ghost) {
-      const show = !this.p2 && this.ghostOn && (this.mode === 'race' || this.mode === 'finished' || this.mode === 'paused');
+      const show = !this.p2 && !this.bots.length && this.ghostOn && (this.mode === 'race' || this.mode === 'finished' || this.mode === 'paused');
       this.ghost.group.visible = show;
       if (show) {
         const r = this.record;
@@ -688,7 +800,7 @@ export class Game {
     const slip = this.mode === 'replay' ? state.slip || 0 : Math.max(...this.car.slip);
     this.audio.update(speed, thr, slip, this.car.contacts === 0, active);
 
-    const rank = this.p2 ? [...pls].sort((x, y) => y.progress - x.progress) : null;
+    const rank = this.p2 || this.bots.length ? [...all].sort((x, y) => (x.done && y.done ? x.finishTime - y.finishTime : (y.progress || 0) - (x.progress || 0))) : null;
     pls.forEach((pl, i) => {
       pl.hud.update({
         mode: this.mode,
@@ -700,12 +812,13 @@ export class Game {
         total: this.path.cells.length,
         car: states[i].p,
         ghost: this.ghost?.group.visible ? this.ghostPos : null,
-        other: this.p2 && i === 0 ? states[1].p : null,
+        others: states.length > 1 ? all.map((o, j) => (o === pl || !states[j] ? null : { p: states[j].p, human: !o.bot })).filter(Boolean) : null,
         cam: CAM_MODES[pl.rig.mode],
         air: pl.car.airTime,
         lap: pl.lap ?? 1,
         laps: this.lapCount(),
         pos: rank && this.mode !== 'countdown' ? rank.indexOf(pl) + 1 : 0,
+        field: all.length,
       });
     });
 
@@ -753,3 +866,5 @@ const tmp7 = new THREE.Vector3();
 const tmpV = new THREE.Vector3();
 const tmpA = new THREE.Vector3();
 const tmpB = new THREE.Quaternion();
+
+export const ordinal = (n) => `${n}${['TH', 'ST', 'ND', 'RD'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10 < 4 ? n % 10 : 0]}`;

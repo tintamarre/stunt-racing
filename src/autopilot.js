@@ -1,16 +1,25 @@
-// Simple pure-pursuit driver used for the attract mode and physics tests.
+// Simple pure-pursuit driver used for the attract mode, the AI opponents and physics tests.
 import { Vector3 } from 'three';
 
 const tmp = new Vector3();
+const side = new Vector3();
 
 export class Autopilot {
-  constructor(path) {
+  // opts: speedK (target speed factor), lane (preferred lateral offset, m), wobble (steering noise),
+  // arcade (corner speeds for the kart handling)
+  constructor(path, opts = {}) {
     this.path = path;
     this.i = 0;
+    this.speedK = opts.speedK ?? 1;
+    this.lane = opts.lane ?? 0;
+    this.wobble = opts.wobble ?? 0;
+    this.arcade = opts.arcade ?? false;
+    this.band = 1; // rubber band factor set by the race
+    this.t = Math.random() * 100;
   }
 
-  reset() {
-    this.i = 0;
+  reset(i = 0) {
+    this.i = i;
   }
 
   input(car) {
@@ -40,11 +49,12 @@ export class Autopilot {
       acc += pts[j].p.distanceTo(pts[n].p);
       j = n;
     }
-    const target = pts[j].p;
+    const target = tmp.copy(pts[j].p);
+    if (this.lane) target.addScaledVector(side.crossVectors(pts[j].f, pts[j].up).normalize(), this.lane);
     const fwd = car.forward(new Vector3());
     const right = car.right(new Vector3());
-    tmp.copy(target).sub(pos);
-    const ang = Math.atan2(tmp.dot(right), tmp.dot(fwd));
+    target.sub(pos);
+    const ang = Math.atan2(target.dot(right), target.dot(fwd));
 
     // Target speed from what's coming up
     let vt = 60;
@@ -53,18 +63,21 @@ export class Autopilot {
       const n = (k + 1) % N;
       dist += pts[k].p.distanceTo(pts[n].p);
       const ty = pts[k].type;
-      if (ty === 'curve') vt = Math.min(vt, 17 + dist * 0.25);
-      if (ty === 'bank') vt = Math.min(vt, 21 + dist * 0.25);
-      if (ty === 'wide') vt = Math.min(vt, 27 + dist * 0.25);
-      if (ty === 'sweep') vt = Math.min(vt, 34 + dist * 0.25);
+      const a = this.arcade ? 1 : 0;
+      if (ty === 'curve') vt = Math.min(vt, 17 + a * 16 + dist * 0.25);
+      if (ty === 'bank') vt = Math.min(vt, 21 + a * 4 + dist * 0.25);
+      if (ty === 'wide') vt = Math.min(vt, 27 + a * 18 + dist * 0.25);
+      if (ty === 'sweep') vt = Math.min(vt, 34 + a * 20 + dist * 0.25);
       if (ty === 'ramp' || ty === 'jump') vt = Math.min(vt, 30 + dist * 0.3);
       if (n === best) break;
     }
     if (pts[best].type === 'loop') vt = 60;
+    else vt *= this.speedK * this.band;
+    this.t += 1 / 60;
     const fspeed = tmp.set(car.body.linvel().x, car.body.linvel().y, car.body.linvel().z).dot(fwd);
     const err = vt - fspeed;
     return {
-      steer: Math.max(-1, Math.min(1, ang * 2.8)),
+      steer: Math.max(-1, Math.min(1, ang * 2.8 + this.wobble * Math.sin(this.t * 1.3) * Math.sin(this.t * 0.37))),
       throttle: err > 0 ? Math.min(1, err / 4) : 0,
       brake: err < -3 ? Math.min(1, -err / 8) : 0,
       handbrake: false,

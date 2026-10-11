@@ -1,7 +1,7 @@
 import './style.css';
 import { World } from './world.js';
 import { initPhysics, CARS } from './physics.js';
-import { Game } from './game.js';
+import { Game, ordinal } from './game.js';
 import { Hud, fmtTime } from './hud.js';
 import { Input } from './input.js';
 import { Audio } from './audio.js';
@@ -47,7 +47,7 @@ async function boot() {
   cloneHud();
   const game = new Game(world, audio, input, hud);
   game.hud2 = new Hud('p2');
-  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, ...prefStore.load() };
+  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, opponents: 3, ai: 'normal', ...prefStore.load() };
   if (isTouch) prefs.players = 1;
 
   // Track list: built-ins, the player's tracks, and a shared one from the URL
@@ -123,6 +123,16 @@ async function boot() {
     game.setPlayers(prefs.players, prefs.car2);
   }
 
+  function selectOpponents(n, level = prefs.ai) {
+    prefs.opponents = n;
+    prefs.ai = level;
+    savePrefs();
+    game.setOpponents(n, level);
+    document.querySelectorAll('#oppSeg button').forEach((b) => b.classList.toggle('on', +b.dataset.opp === n));
+    document.querySelectorAll('#aiSeg button').forEach((b) => b.classList.toggle('on', b.dataset.ai === level));
+    $('aiCard').classList.toggle('hidden', n === 0);
+  }
+
   function selectPlayers(n) {
     prefs.players = n;
     savePrefs();
@@ -186,8 +196,8 @@ async function boot() {
   hud.onFinish = (r) => {
     document.querySelector('#finish [data-act=replay]').classList.toggle('hidden', !!r.split);
     if (r.split) return finishSplit(r);
-    finTitle.textContent = 'FINISH';
-    $('finDetail').style.whiteSpace = '';
+    finTitle.textContent = r.place ? (r.place === 1 ? 'YOU WIN!' : `${ordinal(r.place)} PLACE`) : 'FINISH';
+    $('finDetail').style.whiteSpace = r.standings ? 'pre-line' : '';
     $('finTime').textContent = fmtTime(r.time);
     $('finTrack').textContent = `${r.track} · ${CARS[game.carIdx].name}`;
     $('finRecord').classList.toggle('hidden', !r.isBest);
@@ -199,12 +209,17 @@ async function boot() {
       parts.push(`Laps ${r.lapTimes.map((t) => (t === best ? `${fmtTime(t)} ★` : fmtTime(t))).join(' · ')}`);
     }
     parts.push(r.crashes ? `${r.crashes} crash${r.crashes > 1 ? 'es' : ''}` : 'Clean run!');
-    $('finDetail').textContent = parts.join(' · ');
+    $('finDetail').textContent = parts.join(' · ') + (r.standings ? '\n\n' + standingsText(r.standings) : '');
     hud.setTrack(game.built, game.record);
     setTimeout(() => {
       if (game.mode === 'finished') show('finish', 'hud');
     }, 1200);
   };
+
+  // "1. Lucky Lou · Bubble · 0:42.10", the humans marked with ▶
+  function standingsText(list) {
+    return list.map((p, i) => `${p.human ? '▶ ' : ''}${i + 1}. ${p.name} · ${CARS[p.car].name} · ${p.time != null ? fmtTime(p.time) : 'racing…'}`).join('\n');
+  }
 
   function finishSplit(r) {
     const w = r.results[r.winner];
@@ -218,7 +233,7 @@ async function boot() {
         const gap = p !== w && p.time != null ? ` +${(p.time - w.time).toFixed(2)}s` : '';
         return `${p.name} · ${CARS[p.car].name}: ${p.time != null ? fmtTime(p.time) + gap : 'DNF'}${laps}`;
       })
-      .join('\n');
+      .join('\n') + (r.standings ? '\n\n' + standingsText(r.standings) : '');
     $('finDetail').style.whiteSpace = 'pre-line';
     setTimeout(() => {
       if (game.mode === 'finished') show('finish', 'hud');
@@ -255,6 +270,8 @@ async function boot() {
   document.querySelectorAll('#presetSeg button').forEach((b) => b.addEventListener('click', () => selectPreset(b.dataset.preset)));
   document.querySelectorAll('#lapsSeg button').forEach((b) => b.addEventListener('click', () => selectLaps(+b.dataset.laps)));
   document.querySelectorAll('#playersSeg button').forEach((b) => b.addEventListener('click', () => selectPlayers(+b.dataset.players)));
+  document.querySelectorAll('#oppSeg button').forEach((b) => b.addEventListener('click', () => selectOpponents(+b.dataset.opp)));
+  document.querySelectorAll('#aiSeg button').forEach((b) => b.addEventListener('click', () => selectOpponents(prefs.opponents, b.dataset.ai)));
   document.querySelectorAll('#handlingSeg button').forEach((b) => b.addEventListener('click', () => selectHandling(b.dataset.handling)));
   document.querySelectorAll('#autoReturnSeg button').forEach((b) => b.addEventListener('click', () => selectAutoReturn(b.dataset.auto === 'on')));
   $('btnRace').onclick = race;
@@ -387,6 +404,7 @@ async function boot() {
   selectCar(prefs.car);
   selectCar2(prefs.car2);
   selectPlayers(prefs.players);
+  selectOpponents(prefs.opponents, prefs.ai);
   if (isTouch) $('playersSeg').closest('.card').classList.add('hidden');
   selectPreset(prefs.preset);
   selectTrack(trackIdx);

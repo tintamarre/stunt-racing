@@ -1,6 +1,8 @@
 // HUD: timer, speedometer, progress, minimap, messages.
 import { FIELD } from './terrain.js';
 
+const ordinal = (n) => `${n}${['TH', 'ST', 'ND', 'RD'][n % 100 > 10 && n % 100 < 14 ? 0 : n % 10 < 4 ? n % 10 : 0]}`;
+
 export function fmtTime(t) {
   if (t == null || !isFinite(t)) return '—';
   const m = Math.floor(t / 60);
@@ -88,7 +90,7 @@ export class Hud {
     set('cam', e.cam, s.cam);
     set('prog', e.progTxt, `${s.visited}/${s.total}`);
     set('lap', e.lap, s.laps > 1 ? `LAP ${Math.min(s.lap, s.laps)}/${s.laps}` : '');
-    if (e.pos) set('pos', e.pos, s.pos ? ['', '1ST', '2ND'][s.pos] : '');
+    if (e.pos) set('pos', e.pos, s.pos ? `${ordinal(s.pos)}${s.field > 2 ? ` / ${s.field}` : ''}` : '');
     const pw = `${(100 * s.visited) / Math.max(1, s.total)}%`;
     if (this.last.pw !== pw) {
       this.last.pw = pw;
@@ -117,7 +119,7 @@ export class Hud {
         c.fill();
       };
       if (s.ghost) dot(s.ghost, 'rgba(120,220,255,0.8)', 5);
-      if (s.other) dot(s.other, '#3a8bff', 6.5);
+      for (const o of s.others || []) dot(o.p, o.human ? '#3a8bff' : '#e6e9ef', o.human ? 6.5 : 4.5);
       c.strokeStyle = '#fff';
       c.lineWidth = 2;
       dot(s.car, '#ff4d1f', 6.5);

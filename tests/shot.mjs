@@ -1,18 +1,23 @@
 // Screenshot helper: drives headless Chrome over CDP.
 // usage: node tests/shot.mjs <url> <out.png> [waitMs] [js-to-eval-after-load] [extraWaitMs]
 import { spawn } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const [url, out, wait = '6000', js = '', extra = '0', size = '1440,900'] = process.argv.slice(2);
+// A private port and profile per run, so several screenshots can be taken at the same time
+const port = 9300 + Math.floor(Math.random() * 600);
+const profile = mkdtempSync(join(tmpdir(), 'shot-chrome-'));
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', [
-  '--headless=new', '--remote-debugging-port=9333', `--window-size=${size}`, '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
-  '--ignore-gpu-blocklist', '--user-data-dir=/private/tmp/claude-501/-Users-martin-Documents-Git/60c313dc-5109-4195-ab6a-ccaeaca24562/scratchpad/chrome', 'about:blank',
+  '--headless=new', `--remote-debugging-port=${port}`, `--window-size=${size}`, '--use-angle=swiftshader', '--enable-unsafe-swiftshader',
+  '--ignore-gpu-blocklist', `--user-data-dir=${profile}`, 'about:blank',
 ], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let ws;
 for (let i = 0; i < 50; i++) {
   try {
-    const list = await (await fetch('http://127.0.0.1:9333/json')).json();
+    const list = await (await fetch(`http://127.0.0.1:${port}/json`)).json();
     const page = list.find((p) => p.type === 'page');
     ws = new WebSocket(page.webSocketDebuggerUrl);
     break;
@@ -44,3 +49,4 @@ writeFileSync(out, Buffer.from(shot.result.data, 'base64'));
 console.log(logs.join('\n'));
 ws.close();
 chrome.kill();
+setTimeout(() => rmSync(profile, { recursive: true, force: true }), 500);
