@@ -1,5 +1,5 @@
 // Track editor: paint tiles on the board, validate the circuit, save & share.
-import { TYPES, TYPE_INDEX, GRID, encodeTrack, decodeTrack, tracePath } from './track.js';
+import { TYPES, TYPE_INDEX, GRID, PIECES, encodeTrack, decodeTrack, tracePath, occupancy, localToGrid } from './track.js';
 import { drawBoard, drawPiece } from './tiledraw.js';
 import { customTracks } from './storage.js';
 import { BUILTIN } from './tracks.js';
@@ -44,7 +44,8 @@ export class Editor {
         x.moveTo(54, 18);
         x.lineTo(18, 54);
         x.stroke();
-      } else drawPiece(x, it.id, 0, 0, 0, 72);
+      } else if (PIECES[it.id]?.cover) drawPiece(x, it.id, 0, 0, 0, 36);
+      else drawPiece(x, it.id, 0, 0, 0, 72);
       const span = document.createElement('span');
       span.textContent = it.label;
       b.append(c, span);
@@ -92,7 +93,8 @@ export class Editor {
       const cell = cellOf(e);
       if (!cell) return;
       cv.setPointerCapture(e.pointerId);
-      const cur = this.track.cells[cell.r * GRID + cell.c];
+      const o = occupancy(this.track).get(cell.r * GRID + cell.c);
+      const cur = this.track.cells[o && e.button !== 0 ? o.anchor : cell.r * GRID + cell.c];
       if (e.button === 2) {
         if (cur.t) cur.r = (cur.r + 1) % 4;
         else this.rotate();
@@ -180,8 +182,23 @@ export class Editor {
     return decodeTrack(entry.code, entry.name);
   }
 
+  // Board cells a piece would cover if placed at (c, r)
+  footprint(type, c, r, rot) {
+    return (PIECES[TYPES[type].id]?.cover || [[0, 0]]).map(([dx, dz]) => {
+      const [dc, dr] = localToGrid(rot, dx, dz);
+      return [c + dc, r + dr];
+    });
+  }
+
   place(cell) {
     const i = cell.r * GRID + cell.c;
+    const foot = this.footprint(this.tool, cell.c, cell.r, this.rot).filter(([c, r]) => c >= 0 && r >= 0 && c < GRID && r < GRID);
+    const keys = new Set(foot.map(([c, r]) => r * GRID + c));
+    // Remove multi-cell pieces overlapping the new one, then clear the cells it covers
+    for (const [k, o] of occupancy(this.track)) {
+      if (keys.has(k) && o.piece.cover && o.anchor !== i) this.track.cells[o.anchor] = { t: 0, r: 0 };
+    }
+    for (const k of keys) if (k !== i && PIECES[TYPES[this.tool].id]?.cover) this.track.cells[k] = { t: 0, r: 0 };
     if (this.tool === TYPE_INDEX.start) {
       this.track.cells.forEach((c) => {
         if (c.t === TYPE_INDEX.start) c.t = 0;
@@ -276,7 +293,7 @@ export class Editor {
     // Highlight the circuit
     if (this.path) {
       ctx.fillStyle = 'rgba(77,255,166,0.07)';
-      for (const c of this.path.cells) ctx.fillRect(c.c * s, c.r * s, s, s);
+      for (const c of this.path.cells) for (const k of c.covers) ctx.fillRect((k % GRID) * s, Math.floor(k / GRID) * s, s, s);
     }
     if (this.hover) {
       const { c, r } = this.hover;
@@ -288,7 +305,7 @@ export class Editor {
       ctx.restore();
       ctx.strokeStyle = this.tool ? '#ffb21f' : '#ff4d1f';
       ctx.lineWidth = 2;
-      ctx.strokeRect(c * s + 1, r * s + 1, s - 2, s - 2);
+      for (const [fc, fr] of this.footprint(this.tool, c, r, this.rot)) ctx.strokeRect(fc * s + 1, fr * s + 1, s - 2, s - 2);
     }
   }
 }

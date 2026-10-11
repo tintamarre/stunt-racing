@@ -1,4 +1,4 @@
-// Synthesised audio: engine with gears, tyre screech, wind, impacts, beeps.
+// Synthesised audio: engine with gears, tyre screech, wind, impacts, beeps, horns.
 export class Audio {
   constructor() {
     this.ctx = null;
@@ -147,5 +147,76 @@ export class Audio {
     src.connect(f).connect(g).connect(this.master);
     src.start();
     src.stop(c.currentTime + 0.65);
+  }
+
+  // Per-car horn (CARS[i].horn): 'car' | 'cucaracha' | 'squeak' | 'air'. Ignored while one is still playing.
+  horn(kind = 'car') {
+    if (!this.ctx) return;
+    const c = this.ctx;
+    const t0 = c.currentTime;
+    if (t0 < (this.hornEnd ?? 0)) return;
+    const out = c.createBiquadFilter();
+    out.type = 'lowpass';
+    out.frequency.value = kind === 'air' ? 1400 : 2600;
+    out.connect(this.master);
+    // note: [start, duration, freqs[], gain, type, bend]
+    const note = (at, dur, freqs, gain, type = 'sawtooth', bend = 1) => {
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t0 + at);
+      g.gain.exponentialRampToValueAtTime(gain, t0 + at + 0.02);
+      g.gain.setValueAtTime(gain, t0 + at + dur * 0.8);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + dur);
+      g.connect(out);
+      for (const f of freqs) {
+        const o = c.createOscillator();
+        o.type = type;
+        o.frequency.setValueAtTime(f, t0 + at);
+        if (bend !== 1) o.frequency.exponentialRampToValueAtTime(f * bend, t0 + at + dur);
+        o.connect(g);
+        o.start(t0 + at);
+        o.stop(t0 + at + dur + 0.02);
+      }
+      this.hornEnd = Math.max(this.hornEnd ?? 0, t0 + at + dur);
+    };
+    if (kind === 'cucaracha') {
+      // La cu-ca-ra-cha!
+      const tune = [[392, 0.13], [392, 0.13], [392, 0.13], [523.3, 0.32], [659.3, 0.45]];
+      let at = 0;
+      for (const [f, d] of tune) {
+        note(at, d * 0.92, [f, f * 1.005], 0.13, 'square');
+        at += d;
+      }
+    } else if (kind === 'squeak') {
+      // Rubber toy: two quick squeals
+      for (const at of [0, 0.22]) {
+        const o = c.createOscillator();
+        o.type = 'triangle';
+        o.frequency.setValueAtTime(900, t0 + at);
+        o.frequency.exponentialRampToValueAtTime(1900, t0 + at + 0.07);
+        o.frequency.exponentialRampToValueAtTime(1200, t0 + at + 0.17);
+        const g = c.createGain();
+        g.gain.setValueAtTime(0.0001, t0 + at);
+        g.gain.exponentialRampToValueAtTime(0.35, t0 + at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t0 + at + 0.18);
+        o.connect(g).connect(out);
+        o.start(t0 + at);
+        o.stop(t0 + at + 0.2);
+      }
+      this.hornEnd = t0 + 0.4;
+    } else if (kind === 'air') {
+      // Truck air horn: low chord with a sag at the end, plus a puff of air
+      note(0, 1.1, [146.8, 185, 220, 147.5], 0.16, 'sawtooth', 0.94);
+      const src = c.createBufferSource();
+      src.buffer = this.noiseBuf;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.06, t0);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
+      src.connect(g).connect(out);
+      src.start(t0);
+      src.stop(t0 + 0.5);
+    } else {
+      note(0, 0.18, [415, 523], 0.14, 'square');
+      note(0.24, 0.42, [415, 523], 0.14, 'square');
+    }
   }
 }

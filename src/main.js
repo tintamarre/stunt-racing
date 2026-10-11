@@ -7,7 +7,7 @@ import { Input } from './input.js';
 import { Audio } from './audio.js';
 import { Editor } from './editor.js';
 import { BUILTIN } from './tracks.js';
-import { decodeTrack, encodeTrack, tracePath, TYPES } from './track.js';
+import { decodeTrack, tracePath, TYPES } from './track.js';
 import { drawBoardCropped } from './tiledraw.js';
 import { prefs as prefStore, customTracks, records } from './storage.js';
 
@@ -36,7 +36,7 @@ async function boot() {
   input.bindTouch($('touch'));
   const hud = new Hud();
   const game = new Game(world, audio, input, hud);
-  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, ...prefStore.load() };
+  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, ...prefStore.load() };
 
   // Track list: built-ins, the player's tracks, and a shared one from the URL
   let tracks = [];
@@ -75,8 +75,9 @@ async function boot() {
     if (count('loop')) bits.push(`${count('loop')} loop${count('loop') > 1 ? 's' : ''}`);
     const jumps = count('jump') + count('ramp');
     if (jumps) bits.push(`${jumps} jump${jumps > 1 ? 's' : ''}`);
+    if (game.lapCount() > 1) bits.push(`${game.lapCount()} laps`);
     $('trackInfo').textContent = `${kind} · ${bits.join(' · ')}`;
-    const rec = records.get(encodeTrack(track));
+    const rec = records.get(game.recordKey());
     $('trackBest').textContent = rec ? `Best ${fmtTime(rec.time)} · ${CARS[rec.car ?? 0].name}` : 'No record yet';
     const ctx = $('trackPreview').getContext('2d');
     drawBoardCropped(ctx, track, 160, { grid: false, bg: '#16301a' });
@@ -114,6 +115,14 @@ async function boot() {
     document.querySelectorAll('#handlingSeg button').forEach((b) => b.classList.toggle('on', b.dataset.handling === name));
   }
 
+  function selectLaps(n) {
+    prefs.laps = n;
+    savePrefs();
+    game.setLaps(n);
+    document.querySelectorAll('#lapsSeg button').forEach((b) => b.classList.toggle('on', +b.dataset.laps === n));
+    if (game.path) selectTrack(trackIdx);
+  }
+
   function selectAutoReturn(on) {
     prefs.autoReturn = on;
     savePrefs();
@@ -146,6 +155,10 @@ async function boot() {
     const parts = [];
     if (r.prevBest && !r.isBest) parts.push(`Best ${fmtTime(r.prevBest)} (+${(r.time - r.prevBest).toFixed(2)}s)`);
     if (r.prevBest && r.isBest) parts.push(`${(r.prevBest - r.time).toFixed(2)}s faster than before`);
+    if (r.lapTimes.length > 1) {
+      const best = Math.min(...r.lapTimes);
+      parts.push(`Laps ${r.lapTimes.map((t) => (t === best ? `${fmtTime(t)} ★` : fmtTime(t))).join(' · ')}`);
+    }
     parts.push(r.crashes ? `${r.crashes} crash${r.crashes > 1 ? 'es' : ''}` : 'Clean run!');
     $('finDetail').textContent = parts.join(' · ');
     hud.setTrack(game.built, game.record);
@@ -181,6 +194,7 @@ async function boot() {
     }),
   );
   document.querySelectorAll('#presetSeg button').forEach((b) => b.addEventListener('click', () => selectPreset(b.dataset.preset)));
+  document.querySelectorAll('#lapsSeg button').forEach((b) => b.addEventListener('click', () => selectLaps(+b.dataset.laps)));
   document.querySelectorAll('#handlingSeg button').forEach((b) => b.addEventListener('click', () => selectHandling(b.dataset.handling)));
   document.querySelectorAll('#autoReturnSeg button').forEach((b) => b.addEventListener('click', () => selectAutoReturn(b.dataset.auto === 'on')));
   $('btnRace').onclick = race;
@@ -272,6 +286,7 @@ async function boot() {
       return;
     }
     if (code === 'KeyC' && m !== 'replay') game.rig.cycle();
+    if (code === 'KeyH' && m !== 'replay') audio.horn(CARS[game.carIdx].horn);
     if (code === 'KeyM') {
       audio.setMuted(!audio.muted);
       soundLabel();
@@ -303,6 +318,8 @@ async function boot() {
   // Start
   selectHandling(prefs.handling);
   selectAutoReturn(prefs.autoReturn);
+  game.laps = prefs.laps;
+  document.querySelectorAll('#lapsSeg button').forEach((b) => b.classList.toggle('on', +b.dataset.laps === prefs.laps));
   selectCar(prefs.car);
   selectPreset(prefs.preset);
   selectTrack(trackIdx);

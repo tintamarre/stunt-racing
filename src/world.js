@@ -9,7 +9,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeTextures } from './textures.js';
 import { terrainHeight, fbm, outside, CENTER, TERRAIN_SIZE, FIELD } from './terrain.js';
-import { T, LOOP_R, ROAD_W } from './track.js';
+import { T, LOOP_R, ROAD_W, TUNNEL_HW } from './track.js';
 
 export const PRESETS = {
   day: {
@@ -346,6 +346,7 @@ export class World {
     const steel = new THREE.MeshStandardMaterial({ color: 0xc9ced6, metalness: 0.6, roughness: 0.45 });
     const dark = new THREE.MeshStandardMaterial({ color: 0x2b2f36, metalness: 0.6, roughness: 0.5 });
     const lampMat = glow(0xfff1c8, 0.4, 2.2);
+    const stone = new THREE.MeshStandardMaterial({ color: 0x9a9284, roughness: 0.95, flatShading: true });
     for (const p of built.props) {
       const g = new THREE.Group();
       g.position.copy(p.pos);
@@ -389,6 +390,27 @@ export class World {
         beam.position.set(0, topY, 0);
         beam.castShadow = true;
         g.add(beam);
+      } else if (p.kind === 'tunnel') {
+        this.buildTunnel(g, lampMat);
+      } else if (p.kind === 'bridge') {
+        // Stone piers on the stream banks
+        for (const x of [-7, 7]) {
+          for (const sd of [-1, 1]) {
+            const pier = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.4, 1.2), stone);
+            pier.position.set(x, 0.5, sd * (ROAD_W / 2 - 0.8));
+            pier.castShadow = true;
+            g.add(pier);
+          }
+        }
+        for (const x of [-T / 2 + 0.4, T / 2 - 0.4]) {
+          for (const sd of [-1, 1]) {
+            const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 2.2, 8), dark);
+            lamp.position.set(x, 1.1, sd * (ROAD_W / 2 + 0.4));
+            const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.28, 10, 8), lampMat);
+            bulb.position.set(x, 2.3, sd * (ROAD_W / 2 + 0.4));
+            g.add(lamp, bulb);
+          }
+        }
       } else if (p.kind === 'flags') {
         for (const s of [-1, 1]) {
           const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 5), dark);
@@ -408,6 +430,7 @@ export class World {
       group.add(g);
     }
 
+    this.buildWater(built.water, group);
     this.buildDelineators(built.path, group, glow);
     this.buildTrees(built.trees, group);
     this.buildHouses(built.houses, group);
@@ -415,11 +438,111 @@ export class World {
     if (this.preset) for (const m of this.nightMaterials) m.emissiveIntensity = this.preset.night ? m.userData.nightI : m.userData.dayI;
   }
 
+  // A grassy hill with a concrete bore, extruded along the tile (local x).
+  buildTunnel(g, lampMat) {
+    const R = TUNNEL_HW;
+    const WALL = 3.5;
+    const arch = (r, shape) => {
+      shape.moveTo(-r, -0.6);
+      shape.lineTo(-r, WALL);
+      shape.absarc(0, WALL, r, Math.PI, 0, true);
+      shape.lineTo(r, -0.6);
+      shape.lineTo(-r, -0.6);
+      return shape;
+    };
+    const extrude = (shape) => {
+      const geo = new THREE.ExtrudeGeometry(shape, { depth: T, bevelEnabled: false, curveSegments: 20 });
+      // shape (x, y) + depth z  ->  local (depth - T/2, y, x)
+      const pos = geo.attributes.position;
+      for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getZ(i) - T / 2, pos.getY(i), pos.getX(i));
+      geo.computeVertexNormals();
+      return geo;
+    };
+    const hill = new THREE.Shape();
+    const HW = T / 2 + 0.5;
+    hill.moveTo(-HW, -1);
+    for (let i = 0; i <= 24; i++) {
+      const z = -HW + (2 * HW * i) / 24;
+      const k = 1 - (z / HW) ** 2;
+      hill.lineTo(z, 0.2 + 13 * k ** 0.6 + Math.sin(i * 1.7) * 0.5 * k);
+    }
+    hill.lineTo(HW, -1);
+    hill.lineTo(-HW, -1);
+    hill.holes.push(arch(R + 0.7, new THREE.Path()));
+    const grassMat = new THREE.MeshStandardMaterial({ color: 0x527f34, roughness: 1, flatShading: true, side: THREE.DoubleSide });
+    const mound = new THREE.Mesh(extrude(hill), grassMat);
+    const ring = arch(R + 0.7, new THREE.Shape());
+    ring.holes.push(arch(R, new THREE.Path()));
+    const tube = new THREE.Mesh(extrude(ring), new THREE.MeshStandardMaterial({ map: this.tex.concrete, color: 0x8c8a86, roughness: 0.9, side: THREE.DoubleSide }));
+    for (const m of [mound, tube]) {
+      m.castShadow = true;
+      m.receiveShadow = true;
+      g.add(m);
+    }
+    for (let x = -T / 2 + 3.75; x < T / 2; x += 7.5) {
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 0.5), lampMat);
+      lamp.position.set(x, WALL + R - 0.15, 0);
+      g.add(lamp);
+    }
+  }
+
+  // A broken tree topples in the car's direction of travel
+  fellTree(i, dx, dz) {
+    const info = this.treeInfo?.[i];
+    if (!info) return;
+    const axis = new THREE.Vector3(dz, 0, -dx).normalize();
+    this.falling.push({ info, i, axis, t: 0 });
+  }
+
+  restoreTrees() {
+    if (!this.treeInfo) return;
+    for (const f of this.falling) this.setTreeMatrix(f.i, f.info, null, 0);
+    this.falling = [];
+  }
+
+  setTreeMatrix(i, info, axis, angle) {
+    const m = new THREE.Matrix4();
+    const q = info.q.clone();
+    if (axis) q.premultiply(new THREE.Quaternion().setFromAxisAngle(axis, angle));
+    m.compose(info.pos, q, new THREE.Vector3().setScalar(info.s));
+    this.treeMeshes.trunks.setMatrixAt(i, m);
+    info.leaf[0].setMatrixAt(info.leaf[1], m);
+    this.treeMeshes.trunks.instanceMatrix.needsUpdate = true;
+    info.leaf[0].instanceMatrix.needsUpdate = true;
+  }
+
+  animateTrees(dt) {
+    for (const f of this.falling || []) {
+      if (f.t >= 1) continue;
+      f.t = Math.min(1, f.t + dt / 0.9);
+      this.setTreeMatrix(f.i, f.info, f.axis, 1.5 * f.t * f.t);
+    }
+  }
+
+  // Streams under the bridges: sandy banks and water, slightly above the grass.
+  buildWater(water, group) {
+    if (!water.length) return;
+    const sand = new THREE.MeshStandardMaterial({ color: 0xc9b98a, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
+    const wet = new THREE.MeshStandardMaterial({ color: 0x2f86c4, roughness: 0.08, metalness: 0.2, emissive: 0x0a2a44, polygonOffset: true, polygonOffsetFactor: -2 });
+    this.animated.push((t) => wet.color.setHSL(0.575, 0.7, 0.33 + 0.03 * Math.sin(t * 1.3)));
+    for (const w of water) {
+      for (const [mat, width, y] of [[sand, 16, 0.03], [wet, 11, 0.06]]) {
+        const geo = new THREE.PlaneGeometry(width, w.len);
+        geo.rotateX(-Math.PI / 2);
+        const m = new THREE.Mesh(geo, mat);
+        m.position.copy(w.pos).setY(y);
+        m.quaternion.copy(w.q);
+        m.receiveShadow = true;
+        group.add(m);
+      }
+    }
+  }
+
   // Roadside posts with reflectors every few metres; they glow at night.
   buildDelineators(path, group, glow) {
     const spots = [];
     path.points.forEach((p, i) => {
-      if (i % 4 || p.p.y > 0.3 || p.up.y < 0.97 || p.type === 'loop') return;
+      if (i % 4 || p.p.y > 0.3 || p.up.y < 0.97 || p.type === 'loop' || p.type === 'tunnel' || p.type === 'bridge') return;
       const side = new THREE.Vector3().crossVectors(p.f, p.up).normalize();
       for (const s of [-1, 1]) spots.push({ pos: p.p.clone().addScaledVector(side, s * (ROAD_W / 2 + 1.6)), s });
     });
@@ -457,19 +580,27 @@ export class World {
     const q = new THREE.Quaternion();
     const s = new THREE.Vector3();
     const c = new THREE.Color();
+    this.treeInfo = [];
+    this.falling = [];
+    this.treeMeshes = { trunks, pines, rounds };
     trees.forEach((t, i) => {
       const y = terrainHeight(t.x, t.z);
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), t.k * 6.28);
       s.setScalar(t.s);
-      m.compose(new THREE.Vector3(t.x, y - 0.1, t.z), q, s);
+      const pos = new THREE.Vector3(t.x, y - 0.1, t.z);
+      m.compose(pos, q, s);
       trunks.setMatrixAt(i, m);
+      let leaf;
       if (t.k < 0.55) {
+        leaf = [pines, np];
         pines.setMatrixAt(np, m);
         pines.setColorAt(np++, c.setHSL(0.3 + t.k * 0.1, 0.3, 0.32 + t.k * 0.2));
       } else {
+        leaf = [rounds, nr];
         rounds.setMatrixAt(nr, m);
         rounds.setColorAt(nr++, c.setHSL(0.12 + (t.k - 0.55) * 0.3, 0.55, 0.45 + (t.k - 0.55) * 0.4));
       }
+      this.treeInfo.push({ pos, q: q.clone(), s: t.s, leaf });
     });
     pines.count = np;
     rounds.count = nr;
@@ -518,6 +649,8 @@ export class World {
 
   update(t, focus) {
     for (const f of this.animated) f(t);
+    this.animateTrees(Math.max(0, Math.min(0.1, t - (this.lastT ?? t))));
+    this.lastT = t;
     // Shadow camera follows the focus point, snapped to texels to avoid shimmering
     const texel = 140 / 2048;
     const fx = Math.round(focus.x / texel) * texel;

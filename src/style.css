@@ -380,6 +380,13 @@ kbd {
   font-weight: 600;
   font-size: 15px;
 }
+.hud-lap {
+  margin-top: 4px;
+  font-family: var(--display);
+  font-style: italic;
+  font-size: 26px;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
 .hud-tc {
   position: absolute;
   top: 18px;

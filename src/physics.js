@@ -7,12 +7,16 @@ export { RAPIER };
 export const initPhysics = () => RAPIER.init();
 
 export const CARS = [
-  { id: 'gt', name: 'Vortex GT', color: 0xd01c24, engine: 8200, vmax: 58, grip: 2.35, mass: 1250, steer: 0.5, body: 'gt', stats: [5, 3, 4] },
-  { id: 'rally', name: 'Dust Rally', color: 0x1f64d6, engine: 7200, vmax: 52, grip: 2.9, mass: 1150, steer: 0.56, body: 'rally', stats: [3, 5, 5] },
-  { id: 'muscle', name: 'Thunder 69', color: 0xf0a800, engine: 9800, vmax: 55, grip: 2.05, mass: 1450, steer: 0.48, body: 'muscle', stats: [4, 5, 2] },
+  { id: 'gt', name: 'Vortex GT', color: 0xd01c24, engine: 8200, vmax: 58, grip: 2.35, mass: 1250, steer: 0.5, body: 'gt', horn: 'car', stats: [5, 3, 4] },
+  { id: 'rally', name: 'Dust Rally', color: 0x1f64d6, engine: 7200, vmax: 52, grip: 2.9, mass: 1150, steer: 0.56, body: 'rally', horn: 'car', stats: [3, 5, 5] },
+  { id: 'muscle', name: 'Thunder 69', color: 0xf0a800, engine: 9800, vmax: 55, grip: 2.05, mass: 1450, steer: 0.48, body: 'muscle', horn: 'car', stats: [4, 5, 2] },
+  { id: 'hotdog', name: 'Hot Dog', color: 0xc8482a, engine: 8000, vmax: 54, grip: 2.55, mass: 1200, steer: 0.5, body: 'hotdog', horn: 'cucaracha', stats: [3, 4, 4] },
+  { id: 'bubble', name: 'Bubble', color: 0xff6fb5, engine: 5400, vmax: 50, grip: 2.75, mass: 780, steer: 0.6, body: 'bubble', horn: 'squeak', stats: [2, 4, 5], wheelR: 0.3, wheels: [[1.15, 0.8], [-1.1, 0.8]] },
+  { id: 'monster', name: 'Mad Monster', color: 0x63c22a, engine: 12500, vmax: 54, grip: 2.8, mass: 1900, steer: 0.46, body: 'monster', horn: 'air', stats: [3, 4, 3], wheelR: 0.62, rest: 0.55, travel: 0.6, wheels: [[1.45, 1.25], [-1.4, 1.25]] },
 ];
 
 export const DT = 1 / 60;
+export const TREE_SNAP_SPEED = 14; // m/s (50 km/h): slower than this, trees are solid
 export const DRIFT_LV = [0.4, 1.0]; // drift seconds for blue / orange mini-turbo
 const WHEELS = [
   { x: 1.32, z: -0.84, front: true },
@@ -22,6 +26,9 @@ const WHEELS = [
 ];
 export const WHEEL_R = 0.36;
 const REST = 0.38;
+// Optional per-car wheel layout: spec.wheels [[frontX, halfTrack], [rearX, halfTrack]], wheelR, rest, travel
+export const wheelLayout = (spec) =>
+  spec.wheels ? spec.wheels.flatMap(([x, z], i) => [-z, z].map((zz) => ({ x, z: zz, front: i === 0 }))) : WHEELS;
 
 export class Physics {
   constructor(built) {
@@ -70,22 +77,61 @@ export class Physics {
         RAPIER.ColliderDesc.trimesh(new Float32Array(col.pos), new Uint32Array(col.idx)).setFriction(0.9),
       );
     }
-    for (const t of built.trees) {
-      w.createCollider(RAPIER.ColliderDesc.cylinder(2.5, 0.35 * t.s + 0.15).setTranslation(t.x, 2.5, t.z));
-    }
+    this.trees = built.trees.map((t) => {
+      const r = 0.35 * t.s + 0.15;
+      return { x: t.x, z: t.z, r, broken: false, col: w.createCollider(RAPIER.ColliderDesc.cylinder(2.5, r).setTranslation(t.x, 2.5, t.z)) };
+    });
     for (const h of built.houses) {
       const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), h.rot);
       w.createCollider(
         RAPIER.ColliderDesc.cuboid(5, 3.2, 4).setTranslation(h.x, 3.2, h.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }),
       );
     }
+    for (const b of built.blocks) {
+      w.createCollider(
+        RAPIER.ColliderDesc.cuboid(...b.half).setTranslation(b.pos.x, b.pos.y, b.pos.z).setRotation({ x: b.q.x, y: b.q.y, z: b.q.z, w: b.q.w }),
+      );
+    }
     this.boostZones = built.boostZones;
     this.loopCells = new Set(built.loops.map((l) => l.r * GRID + l.c));
-    this.turnCells = new Set(built.path.cells.filter((c) => c.type === 'curve' || c.type === 'bank').map((c) => c.r * GRID + c.c));
+    this.turnCells = new Set(built.path.cells.filter((c) => c.type === 'curve' || c.type === 'bank').map((c) => c.idx));
   }
 
   step() {
     this.world.step();
+  }
+
+  // Trees hit fast enough snap and let the car through, at the cost of some speed.
+  // Returns the indices of the trees broken this step.
+  smashTrees(car) {
+    const lv = car.body.linvel();
+    const speed = Math.hypot(lv.x, lv.z);
+    if (speed < TREE_SNAP_SPEED) return [];
+    const p = car.body.translation();
+    const reach = 2.4 + speed * DT * 3;
+    const hit = [];
+    this.trees.forEach((t, i) => {
+      if (t.broken) return;
+      const dx = t.x - p.x;
+      const dz = t.z - p.z;
+      if (Math.abs(dx) > 9 || Math.abs(dz) > 9 || Math.hypot(dx, dz) > reach + t.r || dx * lv.x + dz * lv.z <= 0) return;
+      t.broken = true;
+      t.col.setEnabled(false);
+      hit.push(i);
+    });
+    if (hit.length) {
+      const k = 0.82 ** hit.length;
+      car.body.setLinvel({ x: lv.x * k, y: lv.y, z: lv.z * k }, true);
+    }
+    return hit;
+  }
+
+  restoreTrees() {
+    for (const t of this.trees) {
+      if (!t.broken) continue;
+      t.broken = false;
+      t.col.setEnabled(true);
+    }
   }
 
   free() {
@@ -122,12 +168,12 @@ export class Car {
     );
     const v = w.createVehicleController(this.body);
     this.vehicle = v;
-    WHEELS.forEach((wh, i) => {
-      v.addWheel({ x: wh.x, y: 0, z: wh.z }, { x: 0, y: -1, z: 0 }, { x: 0, y: 0, z: -1 }, REST, WHEEL_R);
+    wheelLayout(spec).forEach((wh, i) => {
+      v.addWheel({ x: wh.x, y: 0, z: wh.z }, { x: 0, y: -1, z: 0 }, { x: 0, y: 0, z: -1 }, spec.rest ?? REST, spec.wheelR ?? WHEEL_R);
       v.setWheelSuspensionStiffness(i, 58);
       v.setWheelSuspensionCompression(i, 3.2);
       v.setWheelSuspensionRelaxation(i, 3.8);
-      v.setWheelMaxSuspensionTravel(i, 0.4);
+      v.setWheelMaxSuspensionTravel(i, spec.travel ?? 0.4);
       v.setWheelMaxSuspensionForce(i, 1e6);
       v.setWheelFrictionSlip(i, spec.grip);
       v.setWheelSideFrictionStiffness(i, 1);

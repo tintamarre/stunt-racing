@@ -70,6 +70,16 @@
         </section>
 
         <section class="card row">
+          <header>Laps</header>
+          <div class="seg" id="lapsSeg">
+            <button data-laps="1">1</button>
+            <button data-laps="2">2</button>
+            <button data-laps="3">3</button>
+            <button data-laps="5">5</button>
+          </div>
+        </section>
+
+        <section class="card row">
           <header>Driving</header>
           <div class="seg" id="handlingSeg">
             <button data-handling="arcade" title="Easy kart-style steering, hold Space while turning to drift">Arcade</button>
@@ -103,6 +113,7 @@
       <div class="hud-tl">
         <div class="hud-time"><span id="hudTime">0:00.00</span></div>
         <div class="hud-best">Best <span id="hudBest">—</span></div>
+        <div class="hud-lap" id="hudLap"></div>
       </div>
       <div class="hud-tc">
         <div class="progress"><i id="hudProg"></i></div>
@@ -119,7 +130,7 @@
       </div>
       <div class="hud-bl">
         <span class="chip small" id="hudCam">Chase</span>
-        <span class="hint"><kbd>C</kbd> camera <kbd>R</kbd> reset <kbd>G</kbd> ghost <kbd>Esc</kbd> pause</span>
+        <span class="hint"><kbd>H</kbd> horn <kbd>C</kbd> camera <kbd>R</kbd> reset <kbd>G</kbd> ghost <kbd>Esc</kbd> pause</span>
       </div>
       <div id="msg" class="msg"></div>
       <div id="airtime" class="airtime"></div>
@@ -187,12 +198,14 @@
           <div><kbd>↓</kbd>/<kbd>S</kbd></div><div>Brake / reverse (in the air: lean back)</div>
           <div><kbd>←</kbd><kbd>→</kbd>/<kbd>A</kbd><kbd>D</kbd></div><div>Steer (in the air: spin)</div>
           <div><kbd>Space</kbd>/<kbd>Shift</kbd></div><div>Arcade: hold while steering to drift, release for a mini-turbo (blue sparks, then orange for a super turbo). Classic: handbrake</div>
+          <div><kbd>H</kbd></div><div>Horn (each car has its own!)</div>
           <div><kbd>C</kbd></div><div>Change camera (chase, bumper, TV, heli, cinematic)</div>
           <div><kbd>R</kbd></div><div>Put the car back on the track</div>
           <div><kbd>G</kbd></div><div>Show / hide your best-lap ghost</div>
           <div><kbd>Esc</kbd></div><div>Pause</div>
         </div>
         <p>New to the game? Pick an <b>Easy</b> track with <b>Arcade</b> driving: you can take the turns flat out. Turn on <b>Auto return to track</b> to be put back on the road when you leave it.</p>
+        <p>Hit a tree flat out and it snaps (TIMBER!), costing you a bit of speed; slow down and it is a wall. Races last 1 to 5 laps (set in the menu).</p>
         <p>Drive over <b>every tile</b> of the track, then cross the finish line. Blue <b>boost pads</b> push you forward — use them before loops! Gamepads and touch screens work too.</p>
         <button class="btn primary" data-act="close">Got it</button>
       </div>

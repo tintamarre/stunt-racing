@@ -39,8 +39,9 @@ function unb64(s) {
   return new Float32Array(bytes.buffer);
 }
 
-// Best time + ghost per track code
+// Best time + ghost per track code (and lap count: 1-lap records keep the bare code)
 export const records = {
+  key: (code, laps) => (laps > 1 ? `${code}~${laps}` : code),
   get(code) {
     const r = get(`stunt.rec.${code}`, null);
     if (!r) return null;

@@ -18,6 +18,8 @@ const smokeColor = new THREE.Color(0.85, 0.85, 0.86);
 const dustColor = new THREE.Color(0.55, 0.45, 0.3);
 const grassColor = new THREE.Color(0.35, 0.5, 0.2);
 const sparkBlue = new THREE.Color(0.35, 0.75, 1.6);
+const leafColor = new THREE.Color(0.3, 0.6, 0.18);
+const woodColor = new THREE.Color(0.45, 0.3, 0.17);
 const sparkOrange = new THREE.Color(1.6, 0.7, 0.15);
 
 export class Game {
@@ -46,6 +48,7 @@ export class Game {
     this.ghostOn = true;
     this.arcade = true; // kart-style handling with drift
     this.autoReturn = false; // put the car back on the road after a while off it
+    this.laps = 3; // laps per race on closed circuits
   }
 
   // ------------------------------------------------------------------ setup
@@ -60,12 +63,12 @@ export class Game {
     if (this.physics) this.physics.free();
     this.physics = new Physics(built);
     this.rig.setTrack(this.path);
-    this.cellIndex = new Map(this.path.cells.map((c, i) => [c.r * GRID + c.c, i]));
+    this.cellIndex = new Map(this.path.cells.flatMap((c, i) => c.covers.map((k) => [k, i])));
     const s = this.path.cells[0];
     const xf = cellTransform(s.c, s.r, s.rot);
     this.startCenter = xf.o.clone();
     this.startDir = xf.dir(new THREE.Vector3(1, 0, 0));
-    this.record = records.get(this.code);
+    this.record = records.get(this.recordKey());
     this.skids.clear();
     this.particles.clear();
     this.spawnCar();
@@ -117,6 +120,22 @@ export class Game {
     }
   }
 
+  lapCount() {
+    return this.path?.closed ? this.laps : 1;
+  }
+
+  recordKey() {
+    return records.key(this.code, this.lapCount());
+  }
+
+  setLaps(n) {
+    this.laps = n;
+    if (!this.path) return;
+    this.record = records.get(this.recordKey());
+    this.setupGhost();
+    this.hud.setTrack(this.built, this.record);
+  }
+
   setHandling(arcade) {
     this.arcade = arcade;
     if (this.car) this.car.arcade = arcade;
@@ -143,6 +162,8 @@ export class Game {
 
   // ------------------------------------------------------------------ flow
   resetRun() {
+    this.physics.restoreTrees();
+    this.world.restoreTrees();
     const pose = this.spawnPose(0);
     this.car.reset(pose.pos, pose.q);
     this.syncTransforms(true);
@@ -150,6 +171,9 @@ export class Game {
     this.visited = new Set([0]);
     this.lastCi = 0;
     this.raceTime = 0;
+    this.lap = 1;
+    this.lapStart = 0;
+    this.lapTimes = [];
     this.recN = 0;
     this.crashes = 0;
     this.flipT = 0;
@@ -236,12 +260,15 @@ export class Game {
     if (this.mode === 'finished') inp.throttle *= 0.6;
     this.lastInput = inp;
     car.update(inp);
+    if (this.mode === 'race' || this.mode === 'finished') {
+      for (const i of this.physics.smashTrees(car)) this.fellTree(i);
+    }
     this.physics.step();
     this.syncTransforms(false);
 
     const p = this.curr.p;
     const v = car.vehicle;
-    this.spin += (v.currentVehicleSpeed() * DT) / 0.36;
+    this.spin += (v.currentVehicleSpeed() * DT) / (car.spec.wheelR ?? 0.36);
 
     // Race rules
     const ci = this.cellIndex.get(Math.floor(p.z / T) * GRID + Math.floor(p.x / T));
@@ -258,7 +285,15 @@ export class Game {
           : this.visited.size === this.path.cells.length && ci === this.path.cells.length - 1;
         if (ci === 0) this.prevLocalX = lx;
         else this.prevLocalX = -99;
-        if (done) this.finish();
+        if (done && this.lap < this.lapCount()) {
+          this.lapTimes.push(this.raceTime - this.lapStart);
+          this.lapStart = this.raceTime;
+          this.lap++;
+          this.visited = new Set([0]);
+          const last = this.lap === this.lapCount();
+          this.hud.message(last ? 'FINAL LAP!' : `LAP ${this.lap}/${this.lapCount()}`, last ? 'crash' : 'go', 1.2);
+          this.audio.beep(last ? 880 : 660, 0.25);
+        } else if (done) this.finish();
       } else if (this.visited.size === this.path.cells.length && ci === 0) {
         this.visited = new Set([0]);
       }
@@ -336,6 +371,21 @@ export class Game {
     }
   }
 
+  fellTree(i) {
+    const t = this.physics.trees[i];
+    const lv = this.car.body.linvel();
+    this.world.fellTree(i, lv.x, lv.z);
+    for (let k = 0; k < 26; k++) {
+      const leaf = k % 3 > 0;
+      tmp6.set(t.x + (Math.random() - 0.5) * 2, (leaf ? 3 : 0.8) + Math.random() * 2.5, t.z + (Math.random() - 0.5) * 2);
+      tmp7.set(lv.x * 0.25 + (Math.random() - 0.5) * 6, 2 + Math.random() * 4, lv.z * 0.25 + (Math.random() - 0.5) * 6);
+      this.particles.emit(tmp6, tmp7, leaf ? leafColor : woodColor, 0.95, leaf ? 0.35 : 0.25, 1.2 + Math.random());
+    }
+    this.audio.impact(0.6);
+    this.rig.shake = Math.max(this.rig.shake, 0.35);
+    this.hud.message('TIMBER!', 'air', 0.8);
+  }
+
   emitEffects(car, v) {
     const lv = car.body.linvel();
     const vel = tmp2.set(lv.x, lv.y, lv.z);
@@ -376,6 +426,7 @@ export class Game {
   finish() {
     this.mode = 'finished';
     const time = this.raceTime;
+    this.lapTimes.push(time - this.lapStart);
     const prevBest = this.record?.time;
     const isBest = !prevBest || time < prevBest;
     if (isBest) {
@@ -383,10 +434,10 @@ export class Game {
       const frames = new Float32Array(n * FR);
       for (let i = 0; i < n; i++) frames.set(this.rec.subarray(i * GHOST_STRIDE * FR, i * GHOST_STRIDE * FR + FR), i * FR);
       this.record = { time, car: this.carIdx, stride: GHOST_STRIDE, frames, crashes: this.crashes };
-      records.put(this.code, this.record);
+      records.put(this.recordKey(), this.record);
     }
     this.audio.beep(988, 0.5);
-    this.hud.finish({ time, prevBest, isBest, crashes: this.crashes, track: this.track.name });
+    this.hud.finish({ time, prevBest, isBest, crashes: this.crashes, track: this.track.name, lapTimes: this.lapTimes });
   }
 
   // ------------------------------------------------------------------ per frame
@@ -505,6 +556,8 @@ export class Game {
       ghost: this.ghost?.group.visible ? this.ghostPos : null,
       cam: CAM_MODES[this.rig.mode],
       air: this.car.airTime,
+      lap: this.lap ?? 1,
+      laps: this.lapCount(),
     });
 
     this.world.render();

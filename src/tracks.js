@@ -1,15 +1,28 @@
 // Built-in tracks, described as a drive-through path so the tiles always connect.
-import { emptyTrack, GRID, TYPE_INDEX, DIRS, HEADING_ROT, rotEdge } from './track.js';
+import { emptyTrack, GRID, TYPE_INDEX, DIRS, HEADING_ROT, rotEdge, localToGrid } from './track.js';
 
 const RIGHT = { E: 'S', S: 'W', W: 'N', N: 'E' };
 const LEFT = { E: 'N', N: 'W', W: 'S', S: 'E' };
 const OPP = { E: 'W', W: 'E', N: 'S', S: 'N' };
-const TOKENS = { F: 'start', S: 'straight', B: 'boost', H: 'hump', K: 'ramp', J: 'jump', O: 'loop' };
+const TOKENS = { F: 'start', S: 'straight', B: 'boost', H: 'hump', K: 'ramp', J: 'jump', O: 'loop', X: 'bridge', U: 'tunnel' };
 
 export function fromPath(name, c, r, heading, path, scenery = []) {
   const track = emptyTrack(name);
   for (const tok of path.trim().split(/\s+/)) {
     const cell = track.cells[r * GRID + c];
+    if (tok === 'WR' || tok === 'WL') {
+      // Wide curve over a 2x2 block. A left turn is the right-hand piece driven backwards.
+      const d = tok === 'WR' ? heading : LEFT[OPP[heading]];
+      const rot = HEADING_ROT[d];
+      const [dc, dr] = localToGrid(rot, 1, 1);
+      const [ac, ar] = tok === 'WR' ? [c, r] : [c - dc, r - dr];
+      track.cells[ar * GRID + ac] = { t: TYPE_INDEX.wide, r: rot };
+      [c, r] = tok === 'WR' ? [ac + dc, ar + dr] : [ac, ar];
+      heading = tok === 'WR' ? RIGHT[heading] : OPP[d];
+      c += DIRS[heading][0];
+      r += DIRS[heading][1];
+      continue;
+    }
     if (tok === 'L' || tok === 'R' || tok === 'BL' || tok === 'BR') {
       const out = (tok.endsWith('L') ? LEFT : RIGHT)[heading];
       const entry = OPP[heading];
@@ -40,27 +53,36 @@ const forest = (cells) => cells.map(([c, r]) => [c, r, 'trees']);
 const houses = (cells) => cells.map(([c, r]) => [c, r, 'house']);
 
 export const BUILTIN = [
-  // Beginner tracks: long straights, flat turns (banks hump in the middle), no loops or jumps
+  // Beginner tracks: long straights, wide flowing curves, no loops or jumps
   fromPath(
     'Easy Oval',
     5, 3, 'E',
-    `F S S B S S S S R
-     S S S S S R
-     S S S S S S S S S S R
-     S S S S S R
-     S S`,
+    `F S S B S S S WR
+     S S WR
+     S S S S S S S S WR
+     S S WR
+     S`,
     [...forest([[5, 5], [6, 6], [9, 5], [10, 7], [7, 7], [12, 12], [0, 0], [15, 1]]), ...houses([[4, 6], [11, 5], [6, 12]])],
   ),
   fromPath(
     'Green Valley',
-    4, 3, 'E',
-    `F S B S S S R
-     S S S L
-     S R
-     S S H S R
-     S S S H S S S S R
-     S S S S S S S S R`,
-    [...forest([[5, 5], [6, 7], [8, 9], [5, 10], [9, 6], [14, 3], [1, 13]]), ...houses([[7, 5], [10, 10], [13, 14]])],
+    3, 2, 'E',
+    `F S B S WR
+     S WL S S WR
+     S S WR
+     H S S X S S WR
+     S S S WL WR WR`,
+    [...forest([[6, 4], [10, 10], [11, 9], [6, 9], [7, 8], [14, 2], [1, 13]]), ...houses([[9, 4], [7, 13], [13, 4]])],
+  ),
+  fromPath(
+    'River Run',
+    3, 13, 'E',
+    `F S B S X S S S WL
+     S U U S WL
+     S J S S WR
+     S WL WL
+     S S S X S S S S S L`,
+    [...forest([[5, 9], [6, 10], [8, 9], [9, 11], [13, 9], [14, 10], [14, 5], [7, 3], [8, 2]]), ...houses([[7, 11], [10, 3], [4, 9]])],
   ),
   fromPath(
     'Sunday Drive',
@@ -83,6 +105,17 @@ export const BUILTIN = [
     [...forest([[3, 5], [4, 6], [5, 5], [8, 5], [9, 6], [3, 9], [4, 10], [9, 11], [10, 12], [13, 5], [13, 12], [14, 14]]), ...houses([[5, 8], [9, 10], [13, 2], [3, 14]])],
   ),
   fromPath(
+    'Mountain Pass',
+    3, 2, 'E',
+    `F S B S WR
+     U U S WL
+     S J S WR
+     S O S WR
+     S X S S K S S S S WR
+     S S U S S H S S S S R`,
+    [...forest([[5, 5], [6, 6], [5, 10], [6, 11], [10, 11], [11, 12], [12, 4], [13, 5], [0, 8], [10, 5]]), ...houses([[9, 11], [5, 8], [12, 2]])],
+  ),
+  fromPath(
     'Mad Loops',
     4, 1, 'E',
     `F S O S B S J S S S BR
@@ -94,5 +127,5 @@ export const BUILTIN = [
   ),
 ];
 
-const LEVELS = ['Easy', 'Easy', 'Medium', 'Medium', 'Hard'];
-BUILTIN.forEach((t, i) => (t.level = LEVELS[i]));
+const LEVELS = { 'Easy Oval': 'Easy', 'Green Valley': 'Easy', 'River Run': 'Medium', 'Sunday Drive': 'Medium', 'Stunt Park': 'Medium', 'Mountain Pass': 'Hard', 'Mad Loops': 'Hard' };
+BUILTIN.forEach((t) => (t.level = LEVELS[t.name]));

@@ -20,6 +20,9 @@ export const TYPES = [
   { id: 'trees', label: 'Forest', road: false },
   { id: 'house', label: 'House', road: false },
   { id: 'boost', label: 'Boost pad', road: true },
+  { id: 'wide', label: 'Wide curve', road: true },
+  { id: 'bridge', label: 'Bridge', road: true },
+  { id: 'tunnel', label: 'Tunnel', road: true },
 ];
 export const TYPE_INDEX = Object.fromEntries(TYPES.map((t, i) => [t.id, i]));
 
@@ -58,6 +61,14 @@ export function rotEdge(e, r) {
   return e;
 }
 export const HEADING_ROT = { E: 0, N: 1, W: 2, S: 3 };
+const RIGHT_OF = { E: 'S', S: 'W', W: 'N', N: 'E' };
+
+// Board offset (columns, rows) of a piece-local cell offset (dx along travel, dz to the right).
+export function localToGrid(rot, dx, dz) {
+  const hx = rotEdge('E', rot);
+  const hz = RIGHT_OF[hx];
+  return [dx * DIRS[hx][0] + dz * DIRS[hz][0], dx * DIRS[hx][1] + dz * DIRS[hz][1]];
+}
 
 // ---------------------------------------------------------------------------
 // Piece definitions: each piece has two connectors (u=0 side, u=1 side),
@@ -106,6 +117,18 @@ const jumpCenter = (u) => {
   return { p: v3(x, JUMP_H, 0) };
 };
 
+// Wide curve: a quarter circle of radius 1.5 tiles spanning a 2x2 block (the inner cell stays free).
+const WIDE_R = 1.5 * T;
+const wideS = (u) => {
+  const a = (u * Math.PI) / 2;
+  return { p: v3(-H + WIDE_R * Math.sin(a), 0, H + T - WIDE_R * Math.cos(a)) };
+};
+
+// Humpback bridge over a stream
+export const BRIDGE_H = 2.2;
+const bridgeS = (u) => ({ p: v3(-H + u * T, BRIDGE_H * Math.sin(Math.PI * u) ** 2, 0) });
+
+export const TUNNEL_HW = 7.2; // half width of the tunnel bore (arch radius)
 const HUMP_H = 2.4;
 const humpS = (u) => ({ p: v3(-H + u * T, HUMP_H * Math.sin(Math.PI * u) ** 2, 0) });
 
@@ -150,7 +173,53 @@ export const PIECES = {
   },
   hump: { conn: ['W', 'E'], ribbons: [{ s: humpS, len: T, solid: true }], center: humpS },
   loop: { conn: ['W', 'E'], ribbons: [{ s: loopS, len: LOOP_TOTAL, rails: true, step: 0.8 }], center: loopS },
+  wide: {
+    conn: ['W', 'S'],
+    exit: [1, 1], // the S connector belongs to the cell diagonally ahead-right
+    cover: [[0, 0], [1, 0], [1, 1]],
+    ribbons: [{ s: wideS, len: (Math.PI * WIDE_R) / 2, curbs: true }],
+    center: wideS,
+  },
+  bridge: { conn: ['W', 'E'], ribbons: [{ s: bridgeS, len: T + 1, rails: true, deck: true }], center: bridgeS },
+  tunnel: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
 };
+
+// Which board cells each road piece occupies: grid index -> { anchor, piece, rot, ends: [[c, r, edge] x2], covers }
+export function occupancy(track) {
+  const occ = new Map();
+  const multi = [];
+  track.cells.forEach((cell, i) => {
+    const type = TYPES[cell.t].id;
+    const piece = PIECES[type];
+    if (!piece) return;
+    const c = i % GRID;
+    const r = Math.floor(i / GRID);
+    const at = ([dx, dz]) => {
+      const [dc, dr] = localToGrid(cell.r, dx, dz);
+      return [c + dc, r + dr];
+    };
+    const [ec, er] = at(piece.exit || [0, 0]);
+    const covers = (piece.cover || [[0, 0]]).map(at).filter(([cc, rr]) => cc >= 0 && rr >= 0 && cc < GRID && rr < GRID);
+    const o = {
+      anchor: i,
+      c,
+      r,
+      type,
+      piece,
+      rot: cell.r,
+      ends: [
+        [c, r, rotEdge(piece.conn[0], cell.r)],
+        [ec, er, rotEdge(piece.conn[1], cell.r)],
+      ],
+      covers: covers.map(([cc, rr]) => rr * GRID + cc),
+    };
+    if (piece.cover) multi.push(o);
+    else occ.set(i, o);
+  });
+  // Multi-cell pieces win over whatever sits under them
+  for (const o of multi) for (const k of o.covers) occ.set(k, o);
+  return occ;
+}
 
 function frameOf(sampler, u) {
   const a = sampler(u);
@@ -186,38 +255,39 @@ export function tracePath(track) {
     if (c.t === TYPE_INDEX.start && start < 0) start = i;
   });
   if (start < 0) return null;
+  const occ = occupancy(track);
   const cells = [];
   let c = start % GRID;
   let r = Math.floor(start / GRID);
   const sc = track.cells[start];
   let out = rotEdge('E', sc.r);
-  cells.push({ c, r, idx: start, forward: true, type: TYPES[sc.t].id, rot: sc.r });
+  cells.push({ c, r, idx: start, forward: true, type: TYPES[sc.t].id, rot: sc.r, covers: [start] });
   const seen = new Set([start]);
   let closed = false;
   for (;;) {
     const nc = c + DIRS[out][0];
     const nr = r + DIRS[out][1];
-    const cell = cellAt(track, nc, nr);
-    if (!cell || !TYPES[cell.t].road) break;
-    const piece = PIECES[TYPES[cell.t].id];
+    if (nc < 0 || nr < 0 || nc >= GRID || nr >= GRID) break;
+    const o = occ.get(nr * GRID + nc);
+    if (!o) break;
     const entry = OPP[out];
-    const c0 = rotEdge(piece.conn[0], cell.r);
-    const c1 = rotEdge(piece.conn[1], cell.r);
+    const [e0, e1] = o.ends;
     let forward;
-    if (entry === c0) forward = true;
-    else if (entry === c1) forward = false;
+    if (e0[0] === nc && e0[1] === nr && e0[2] === entry) forward = true;
+    else if (e1[0] === nc && e1[1] === nr && e1[2] === entry) forward = false;
     else break;
-    const idx = nr * GRID + nc;
+    const idx = o.anchor;
     if (idx === start) {
       closed = forward;
       break;
     }
     if (seen.has(idx)) break;
     seen.add(idx);
-    cells.push({ c: nc, r: nr, idx, forward, type: TYPES[cell.t].id, rot: cell.r });
-    out = forward ? c1 : c0;
-    c = nc;
-    r = nr;
+    cells.push({ c: o.c, r: o.r, idx, forward, type: o.type, rot: o.rot, covers: o.covers });
+    const ex = forward ? e1 : e0;
+    out = ex[2];
+    c = ex[0];
+    r = ex[1];
   }
   // Dense centre line for AI / respawn.
   const points = [];
@@ -286,7 +356,32 @@ export function buildTrack(track) {
   const houses = [];
   const boostZones = [];
   const loops = [];
+  const blocks = []; // extra box colliders { pos, q, half }
+  const water = []; // stream strips under bridges { pos, q, len }
   const rand = mulberry(1234567);
+  const occ = occupancy(track);
+  const wet = new Set();
+  // Streams run under each bridge, across the road, through free neighbouring cells
+  track.cells.forEach((cell, i) => {
+    if (TYPES[cell.t].id !== 'bridge') return;
+    const c = i % GRID;
+    const r = Math.floor(i / GRID);
+    let lo = 0;
+    let hi = 0;
+    const free = (k) => {
+      const [dc, dr] = localToGrid(cell.r, 0, k);
+      const cc = cellAt(track, c + dc, r + dr);
+      return cc && !TYPES[cc.t].road && !occ.has((r + dr) * GRID + c + dc);
+    };
+    while (lo < 2 && free(-lo - 1)) lo++;
+    while (hi < 2 && free(hi + 1)) hi++;
+    for (let k = -lo; k <= hi; k++) {
+      const [dc, dr] = localToGrid(cell.r, 0, k);
+      wet.add((r + dr) * GRID + c + dc);
+    }
+    const xf = cellTransform(c, r, cell.r);
+    water.push({ pos: xf.point(v3(0, 0, ((hi - lo) * T) / 2)), q: xf.q, len: (lo + hi + 1) * T - 4 });
+  });
 
   const edge = (fr, off, lift = 0) => fr.p.clone().addScaledVector(fr.right, off).addScaledVector(fr.up, lift);
   const ground = (p) => v3(p.x, -0.4, p.z);
@@ -297,6 +392,8 @@ export function buildTrack(track) {
       const type = TYPES[cell.t].id;
       const xf = cellTransform(c, r, cell.r);
       const piece = PIECES[type];
+      const under = occ.get(r * GRID + c);
+      if (under && under.anchor !== r * GRID + c) continue; // covered by a multi-cell piece
       if (piece) {
         for (const rb of piece.ribbons) {
           const n = Math.max(4, Math.ceil(rb.len / (rb.step || 1.5)));
@@ -334,6 +431,15 @@ export function buildTrack(track) {
                 col.quad(...rq);
               }
             }
+            if (rb.deck) {
+              // Bridge deck: underside and edges, 0.7 m thick
+              const dA = (o) => edge(A, o, -0.7);
+              const dB = (o) => edge(B, o, -0.7);
+              const w = ROAD_W / 2;
+              S.concrete.quad(dB(-w), dB(w), dA(w), dA(-w));
+              S.concrete.quad(edge(A, w, 0), dA(w), dB(w), edge(B, w, 0));
+              S.concrete.quad(edge(B, -w, 0), dB(-w), dA(-w), edge(A, -w, 0));
+            }
             if (rb.solid) {
               const mat = rb.stripes ? S.stripes : S.concrete;
               for (const s of [-1, 1]) {
@@ -370,6 +476,12 @@ export function buildTrack(track) {
           S.boost.quad(edge(a, -3, 0.05), edge(a, 3, 0.05), edge(b, 3, 0.05), edge(b, -3, 0.05), [0, 0, 1, 0, 1, 5, 0, 5]);
           boostZones.push({ c, r, dir: xf.dir(v3(1, 0, 0)) });
         }
+        if (type === 'tunnel') {
+          props.push({ kind: 'tunnel', pos: xf.o.clone(), q: xf.q });
+          for (const sd of [-1, 1]) blocks.push({ pos: xf.point(v3(0, 4, sd * (TUNNEL_HW + 0.5))), q: xf.q, half: [H, 4, 0.5] });
+          blocks.push({ pos: xf.point(v3(0, TUNNEL_HW + 4.2, 0)), q: xf.q, half: [H, 0.5, TUNNEL_HW] });
+        }
+        if (type === 'bridge') props.push({ kind: 'bridge', pos: xf.o.clone(), q: xf.q });
         if (type === 'loop') loops.push({ c, r });
         if (type === 'loop') props.push({ kind: 'loopTowers', pos: xf.o.clone(), q: xf.q });
         if (type === 'bank' || type === 'jump' || type === 'ramp') props.push({ kind: 'flags', pos: xf.o.clone(), q: xf.q, type });
@@ -377,6 +489,7 @@ export function buildTrack(track) {
         // Scenery
         const cx = c * T + H;
         const cz = r * T + H;
+        if (wet.has(r * GRID + c)) continue;
         const nTrees = type === 'trees' ? 7 + Math.floor(rand() * 6) : type === 'house' ? 2 : rand() < 0.35 ? 1 + Math.floor(rand() * 3) : 0;
         for (let i = 0; i < nTrees; i++) {
           trees.push({ x: cx + (rand() - 0.5) * (T - 6), z: cz + (rand() - 0.5) * (T - 6), s: 0.7 + rand() * 0.7, k: rand() });
@@ -389,5 +502,5 @@ export function buildTrack(track) {
   }
   // Keep trees off houses
   const treesFiltered = trees.filter((t) => !houses.some((h) => Math.hypot(t.x - h.x, t.z - h.z) < 8));
-  return { surfaces: S, collision: col, props, trees: treesFiltered, houses, boostZones, loops, path: tracePath(track) };
+  return { surfaces: S, collision: col, props, trees: treesFiltered, houses, boostZones, loops, blocks, water, path: tracePath(track) };
 }

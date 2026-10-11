@@ -15,6 +15,7 @@ export class Hud {
     this.el = {
       time: $('hudTime'),
       best: $('hudBest'),
+      lap: $('hudLap'),
       prog: $('hudProg'),
       progTxt: $('hudProgTxt'),
       speed: $('hudSpeed'),
@@ -85,6 +86,7 @@ export class Hud {
     set('gear', e.gear, s.speed < 0.5 ? 'N' : String(s.gear));
     set('cam', e.cam, s.cam);
     set('prog', e.progTxt, `${s.visited}/${s.total}`);
+    set('lap', e.lap, s.laps > 1 ? `LAP ${Math.min(s.lap, s.laps)}/${s.laps}` : '');
     const pw = `${(100 * s.visited) / Math.max(1, s.total)}%`;
     if (this.last.pw !== pw) {
       this.last.pw = pw;

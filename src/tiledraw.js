@@ -1,5 +1,5 @@
 // 2D drawing of tiles for the editor, menu preview and minimap.
-import { PIECES, TYPES, T, GRID } from './track.js';
+import { PIECES, TYPES, T, GRID, occupancy } from './track.js';
 
 export const TYPE_COLORS = {
   straight: '#c9d1dc',
@@ -11,6 +11,9 @@ export const TYPE_COLORS = {
   hump: '#ffd27a',
   loop: '#ff4d1f',
   boost: '#39e0ff',
+  wide: '#c9d1dc',
+  bridge: '#b9a98a',
+  tunnel: '#7a9a52',
   trees: '#3f8a3a',
   house: '#c8574a',
 };
@@ -97,6 +100,34 @@ export function drawPiece(ctx, type, r, x0, y0, s, { detail = true } = {}) {
     ctx.beginPath();
     ctx.arc(c[0], c[1], s * 0.12, 0, 7);
     ctx.fill();
+  } else if (type === 'bridge') {
+    // Stream across the road
+    const [a1, b1] = map(-5, -14);
+    const [a2, b2] = map(5, 14);
+    ctx.fillStyle = 'rgba(47,134,196,0.55)';
+    ctx.fillRect(Math.min(a1, a2), Math.min(b1, b2), Math.abs(a2 - a1), Math.abs(b2 - b1));
+    ctx.strokeStyle = '#e8e2d4';
+    ctx.lineWidth = Math.max(1, s * 0.05);
+    for (const z of [-6.5, 6.5]) {
+      const [x1, y1] = map(-9, z);
+      const [x2, y2] = map(9, z);
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+    }
+  } else if (type === 'tunnel') {
+    // Hill over the road, with the road showing through
+    ctx.fillStyle = '#5f8f3a';
+    for (const z of [-1, 1]) {
+      const [x1, y1] = map(-13, z * 7);
+      const [x2, y2] = map(13, z * 14);
+      ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+    }
+    ctx.fillStyle = 'rgba(95,143,58,0.55)';
+    const [x1, y1] = map(-13, -7);
+    const [x2, y2] = map(13, 7);
+    ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
   } else if (type === 'start') {
     const [a1, b1] = map(0, -5.5);
     const [a2, b2] = map(0, 5.5);
@@ -137,8 +168,7 @@ export function drawBoard(ctx, track, size, { grid = true, detail = true, bg = '
 // Draw only the used part of the board (plus a margin), scaled to fill the canvas.
 export function drawBoardCropped(ctx, track, size, opts = {}) {
   let c0 = GRID, r0 = GRID, c1 = -1, r1 = -1;
-  track.cells.forEach((cell, i) => {
-    if (!TYPES[cell.t].road) return;
+  occupancy(track).forEach((o, i) => {
     const c = i % GRID;
     const r = Math.floor(i / GRID);
     c0 = Math.min(c0, c);

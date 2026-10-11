@@ -8,6 +8,7 @@ import { Autopilot } from '../src/autopilot.js';
 
 await initPhysics();
 let failed = 0;
+let runs = 0;
 const only = process.argv[2];
 for (const [ti, track] of BUILTIN.entries()) {
   if (only && String(ti) !== only) continue;
@@ -19,7 +20,7 @@ for (const [ti, track] of BUILTIN.entries()) {
     const car = new Car(phys, spec, xf.point(new Vector3(-8, 1.2, 0)), xf.q, { arcade });
     const ap = new Autopilot(built.path);
     const visited = new Set();
-    const cellIdx = new Map(built.path.cells.map((c, i) => [c.r * 16 + c.c, i]));
+    const cellIdx = new Map(built.path.cells.flatMap((c, i) => c.covers.map((k) => [k, i])));
     let t = 0;
     let flipped = 0;
     let status = 'timeout';
@@ -46,12 +47,13 @@ for (const [ti, track] of BUILTIN.entries()) {
       if (p.y < -5) { status = 'FELL'; break; }
       if (visited.size === built.path.cells.length && ci === 0) { status = 'ok'; break; }
     }
+    runs++;
     if (status !== 'ok') failed++;
     console.log(`${track.name.padEnd(14)} ${spec.name.padEnd(11)} ${arcade ? 'arcade' : 'classic'} ${status.padEnd(8)} t=${t.toFixed(1)}s visited=${visited.size}/${built.path.cells.length} vmax=${(maxV * 3.6).toFixed(0)}km/h loopTop=${loopMinTop.toFixed(1)}`);
     if (status !== 'ok' || process.env.VERBOSE) console.log('   ', log.slice(-8).join(' | '));
     phys.free();
   }
 }
-// The autopilot is not perfect; a couple of failed laps are tolerated, more means a physics regression.
+// The autopilot is not perfect; up to 10% failed laps are tolerated, more means a physics regression.
 console.log(`${failed} failed run(s)`);
-process.exit(failed > 4 ? 1 : 0);
+process.exit(failed > Math.max(2, runs * 0.1) ? 1 : 0);

@@ -18,7 +18,7 @@ for (const track of BUILTIN) {
     const xf = cellTransform(s.c, s.r, s.rot);
     const car = new Car(phys, spec, xf.point(new Vector3(-8, 1.2, 0)), xf.q, { arcade });
     const ap = new Autopilot(built.path);
-    const cellIdx = new Map(built.path.cells.map((c, i) => [c.r * 16 + c.c, i]));
+    const cellIdx = new Map(built.path.cells.flatMap((c, i) => c.covers.map((k) => [k, i])));
     const visited = new Set();
     let wasOff = false; const events = [];
     let t = 0, off = 0, turbos = 0, status = 'timeout';

@@ -55,6 +55,7 @@ export class Autopilot {
       const ty = pts[k].type;
       if (ty === 'curve') vt = Math.min(vt, 17 + dist * 0.25);
       if (ty === 'bank') vt = Math.min(vt, 21 + dist * 0.25);
+      if (ty === 'wide') vt = Math.min(vt, 27 + dist * 0.25);
       if (ty === 'ramp' || ty === 'jump') vt = Math.min(vt, 30 + dist * 0.3);
       if (n === best) break;
     }
