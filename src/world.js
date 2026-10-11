@@ -9,7 +9,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeTextures } from './textures.js';
 import { terrainHeight, fbm, outside, CENTER, TERRAIN_SIZE, FIELD } from './terrain.js';
-import { T, LOOP_R, ROAD_W, TUNNEL_HW } from './track.js';
+import { T, LOOP_R, ROAD_W, TUNNEL_HW, TUNNEL_WALL, tunnelGeometry } from './track.js';
 
 export const PRESETS = {
   day: {
@@ -90,6 +90,8 @@ export class World {
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.2, 6000);
+    this.camera2 = new THREE.PerspectiveCamera(62, 1, 0.2, 6000); // player 2 in split screen
+    this.split = false;
     this.tex = makeTextures();
     this.tex.grass.repeat.set(TERRAIN_SIZE / 6, TERRAIN_SIZE / 6);
 
@@ -152,8 +154,11 @@ export class World {
   resize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    const v = this.views(w, h)[0];
+    for (const cam of [this.camera, this.camera2]) {
+      cam.aspect = v.w / v.h;
+      cam.updateProjectionMatrix();
+    }
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
   }
@@ -440,40 +445,10 @@ export class World {
 
   // A grassy hill with a concrete bore, extruded along the tile (local x).
   buildTunnel(g, lampMat) {
-    const R = TUNNEL_HW;
-    const WALL = 3.5;
-    const arch = (r, shape) => {
-      shape.moveTo(-r, -0.6);
-      shape.lineTo(-r, WALL);
-      shape.absarc(0, WALL, r, Math.PI, 0, true);
-      shape.lineTo(r, -0.6);
-      shape.lineTo(-r, -0.6);
-      return shape;
-    };
-    const extrude = (shape) => {
-      const geo = new THREE.ExtrudeGeometry(shape, { depth: T, bevelEnabled: false, curveSegments: 20 });
-      // shape (x, y) + depth z  ->  local (depth - T/2, y, x)
-      const pos = geo.attributes.position;
-      for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getZ(i) - T / 2, pos.getY(i), pos.getX(i));
-      geo.computeVertexNormals();
-      return geo;
-    };
-    const hill = new THREE.Shape();
-    const HW = T / 2 + 0.5;
-    hill.moveTo(-HW, -1);
-    for (let i = 0; i <= 24; i++) {
-      const z = -HW + (2 * HW * i) / 24;
-      const k = 1 - (z / HW) ** 2;
-      hill.lineTo(z, 0.2 + 13 * k ** 0.6 + Math.sin(i * 1.7) * 0.5 * k);
-    }
-    hill.lineTo(HW, -1);
-    hill.lineTo(-HW, -1);
-    hill.holes.push(arch(R + 0.7, new THREE.Path()));
+    const geo = tunnelGeometry();
     const grassMat = new THREE.MeshStandardMaterial({ color: 0x527f34, roughness: 1, flatShading: true, side: THREE.DoubleSide });
-    const mound = new THREE.Mesh(extrude(hill), grassMat);
-    const ring = arch(R + 0.7, new THREE.Shape());
-    ring.holes.push(arch(R, new THREE.Path()));
-    const tube = new THREE.Mesh(extrude(ring), new THREE.MeshStandardMaterial({ map: this.tex.concrete, color: 0x8c8a86, roughness: 0.9, side: THREE.DoubleSide }));
+    const mound = new THREE.Mesh(geo.mound, grassMat);
+    const tube = new THREE.Mesh(geo.tube, new THREE.MeshStandardMaterial({ map: this.tex.concrete, color: 0x8c8a86, roughness: 0.9, side: THREE.DoubleSide }));
     for (const m of [mound, tube]) {
       m.castShadow = true;
       m.receiveShadow = true;
@@ -481,7 +456,7 @@ export class World {
     }
     for (let x = -T / 2 + 3.75; x < T / 2; x += 7.5) {
       const lamp = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.15, 0.5), lampMat);
-      lamp.position.set(x, WALL + R - 0.15, 0);
+      lamp.position.set(x, TUNNEL_WALL + TUNNEL_HW - 0.15, 0);
       g.add(lamp);
     }
   }
@@ -651,17 +626,48 @@ export class World {
     for (const f of this.animated) f(t);
     this.animateTrees(Math.max(0, Math.min(0.1, t - (this.lastT ?? t))));
     this.lastT = t;
+    this.focusOn(focus, this.camera);
+  }
+
+  // Split screen: two players side by side (top / bottom on a portrait screen)
+  setSplit(on) {
+    if (this.split === on) return;
+    this.split = on;
+    this.resize();
+  }
+
+  views(w, h) {
+    if (!this.split) return [{ x: 0, y: 0, w, h }];
+    if (h > w) return [{ x: 0, y: h / 2, w, h: h / 2 }, { x: 0, y: 0, w, h: h / 2 }];
+    return [{ x: 0, y: 0, w: w / 2, h }, { x: w / 2, y: 0, w: w / 2, h }];
+  }
+
+  focusOn(focus, camera) {
     // Shadow camera follows the focus point, snapped to texels to avoid shimmering
     const texel = 140 / 2048;
     const fx = Math.round(focus.x / texel) * texel;
     const fz = Math.round(focus.z / texel) * texel;
     this.sun.target.position.set(fx, focus.y, fz);
     this.sun.position.set(fx, focus.y, fz).addScaledVector(this.lightDir, 200);
-    this.sky.position.copy(this.camera.position);
+    this.sky.position.copy(camera.position);
   }
 
-  render() {
-    this.composer.render();
+  // shots: [{ camera, focus }] per player. Split screen renders straight to the canvas
+  // (no bloom / vignette: the composer works on the whole frame).
+  render(shots) {
+    if (!this.split || !shots || shots.length < 2) return this.composer.render();
+    const r = this.renderer;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    r.setScissorTest(true);
+    this.views(w, h).forEach((v, i) => {
+      this.focusOn(shots[i].focus, shots[i].camera);
+      r.setViewport(v.x, v.y, v.w, v.h);
+      r.setScissor(v.x, v.y, v.w, v.h);
+      r.render(this.scene, shots[i].camera);
+    });
+    r.setScissorTest(false);
+    r.setViewport(0, 0, w, h);
   }
 }
 

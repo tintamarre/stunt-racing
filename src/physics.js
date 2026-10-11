@@ -16,7 +16,7 @@ export const CARS = [
 ];
 
 export const DT = 1 / 60;
-export const TREE_SNAP_SPEED = 14; // m/s (50 km/h): slower than this, trees are solid
+export const TREE_SNAP_SPEED = 6; // m/s (~20 km/h): slower than this, trees are solid
 export const DRIFT_LV = [0.4, 1.0]; // drift seconds for blue / orange mini-turbo
 const WHEELS = [
   { x: 1.32, z: -0.84, front: true },
@@ -142,6 +142,7 @@ export class Physics {
 const tmpQ = new Quaternion();
 const tmpV = new Vector3();
 const tmpV2 = new Vector3();
+const tmpV3 = new Vector3();
 
 export class Car {
   constructor(physics, spec, pos, quat, opts = {}) {
@@ -161,8 +162,12 @@ export class Car {
     this.collider = w.createCollider(
       RAPIER.ColliderDesc.roundCuboid(1.8, 0.2, 0.7, 0.22)
         .setMassProperties(m, { x: 0, y: -0.55, z: 0 }, { x: m * 0.35, y: m * 1.75, z: m * 1.5 }, { x: 0, y: 0, z: 0, w: 1 })
-        .setFriction(0.4)
-        .setRestitution(0.1)
+        // Nearly frictionless body that bounces a little: the car glances off rails, curbs and
+        // obstacle edges instead of sticking to them; only a big wall hit head-on stops it.
+        .setFriction(0.05)
+        .setFrictionCombineRule(RAPIER.CoefficientCombineRule.Min)
+        .setRestitution(0.3)
+        .setRestitutionCombineRule(RAPIER.CoefficientCombineRule.Max)
         .setTranslation(0, 0.2, 0),
       this.body,
     );
@@ -237,6 +242,8 @@ export class Car {
     const fwd = this.forward(new Vector3());
     const fspeed = vel.dot(fwd);
     const speed = vel.length();
+    this.glance(fwd, speed);
+    this.prevSpeed = speed;
 
     // Surface
     let contacts = 0;
@@ -382,6 +389,36 @@ export class Car {
       if (rear && input.throttle > 0.5 && fspeed < 12 && fspeed > -1) s += 0.35 * (1 - fspeed / 12);
       this.slip[i] = Math.min(1, s);
     }
+  }
+
+  // Scraping a wall at a shallow angle turns the car along it and keeps most of its speed,
+  // instead of stopping dead. Head-on hits (steeper than ~48°) are left to the bounce.
+  glance(fwd, speed) {
+    if (this.inLoop || !this.prevSpeed || this.prevSpeed < 6) return;
+    const w = this.physics.world;
+    let n = null;
+    w.contactPairsWith(this.collider, (other) => {
+      w.contactPair(this.collider, other, (m, flipped) => {
+        if (n || m.numContacts() === 0) return;
+        const nm = m.normal();
+        const k = flipped ? 1 : -1; // wall -> car
+        if (Math.abs(nm.y) > 0.6) return; // ground, not a wall
+        n = tmpV2.set(nm.x * k, 0, nm.z * k).normalize();
+      });
+    });
+    if (!n) return;
+    const into = -fwd.dot(n); // sin of the hit angle
+    if (into < 0.12 || into > 0.75) return;
+    const t = tmpV3.copy(fwd).addScaledVector(n, into).setY(0).normalize();
+    const keep = this.prevSpeed * (1 - 0.45 * into);
+    if (speed >= keep) return;
+    const lv = this.body.linvel();
+    this.body.setLinvel({ x: t.x * keep + n.x * 1.5, y: lv.y, z: t.z * keep + n.z * 1.5 }, true);
+    // Yaw towards the wall tangent
+    const yaw = Math.atan2(-(fwd.x * t.z - fwd.z * t.x), fwd.x * t.x + fwd.z * t.z);
+    const av = this.body.angvel();
+    this.body.setAngvel({ x: av.x, y: yaw / 0.12, z: av.z }, true);
+    this.scrape = 0.3;
   }
 
   // Kart-style handling: steering sets the yaw rate directly, sideways speed is

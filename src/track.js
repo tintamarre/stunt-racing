@@ -1,6 +1,6 @@
 // Track model: a GRID x GRID board of tiles, each holding a piece type and a rotation.
 // This module is pure data + geometry (no rendering), so it also runs in Node for tests.
-import { Vector3, Quaternion } from 'three';
+import { Vector3, Quaternion, Shape, Path, ExtrudeGeometry } from 'three';
 
 export const T = 30; // tile size (m)
 export const GRID = 16;
@@ -23,6 +23,7 @@ export const TYPES = [
   { id: 'wide', label: 'Wide curve', road: true },
   { id: 'bridge', label: 'Bridge', road: true },
   { id: 'tunnel', label: 'Tunnel', road: true },
+  { id: 'sweep', label: 'Sweeping curve', road: true },
 ];
 export const TYPE_INDEX = Object.fromEntries(TYPES.map((t, i) => [t.id, i]));
 
@@ -124,11 +125,57 @@ const wideS = (u) => {
   return { p: v3(-H + WIDE_R * Math.sin(a), 0, H + T - WIDE_R * Math.cos(a)) };
 };
 
+// Sweeping curve: radius 2.5 tiles over a 3x3 block
+const SWEEP_R = 2.5 * T;
+const sweepS = (u) => {
+  const a = (u * Math.PI) / 2;
+  return { p: v3(-H + SWEEP_R * Math.sin(a), 0, H + 2 * T - SWEEP_R * Math.cos(a)) };
+};
+
 // Humpback bridge over a stream
 export const BRIDGE_H = 2.2;
 const bridgeS = (u) => ({ p: v3(-H + u * T, BRIDGE_H * Math.sin(Math.PI * u) ** 2, 0) });
 
 export const TUNNEL_HW = 7.2; // half width of the tunnel bore (arch radius)
+export const TUNNEL_WALL = 3.5; // height where the arch starts
+
+// Tunnel tile in local space: a hill with a bore (mound) and the concrete lining (tube).
+// Shared by the renderer and the collision mesh, so the hill is solid from every side.
+let tunnelGeo = null;
+export function tunnelGeometry() {
+  if (tunnelGeo) return tunnelGeo;
+  const arch = (r, shape) => {
+    shape.moveTo(-r, -0.6);
+    shape.lineTo(-r, TUNNEL_WALL);
+    shape.absarc(0, TUNNEL_WALL, r, Math.PI, 0, true);
+    shape.lineTo(r, -0.6);
+    shape.lineTo(-r, -0.6);
+    return shape;
+  };
+  const extrude = (shape) => {
+    const geo = new ExtrudeGeometry(shape, { depth: T, bevelEnabled: false, curveSegments: 20 });
+    // shape (x, y) + depth z  ->  local (depth - T/2, y, x)
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getZ(i) - T / 2, pos.getY(i), pos.getX(i));
+    geo.computeVertexNormals();
+    return geo;
+  };
+  const hill = new Shape();
+  const HW = T / 2 + 0.5;
+  hill.moveTo(-HW, -1);
+  for (let i = 0; i <= 24; i++) {
+    const z = -HW + (2 * HW * i) / 24;
+    const k = 1 - (z / HW) ** 2;
+    hill.lineTo(z, 0.2 + 13 * k ** 0.6 + Math.sin(i * 1.7) * 0.5 * k);
+  }
+  hill.lineTo(HW, -1);
+  hill.lineTo(-HW, -1);
+  hill.holes.push(arch(TUNNEL_HW + 0.7, new Path()));
+  const ring = arch(TUNNEL_HW + 0.7, new Shape());
+  ring.holes.push(arch(TUNNEL_HW, new Path()));
+  tunnelGeo = { mound: extrude(hill), tube: extrude(ring) };
+  return tunnelGeo;
+}
 const HUMP_H = 2.4;
 const humpS = (u) => ({ p: v3(-H + u * T, HUMP_H * Math.sin(Math.PI * u) ** 2, 0) });
 
@@ -179,6 +226,13 @@ export const PIECES = {
     cover: [[0, 0], [1, 0], [1, 1]],
     ribbons: [{ s: wideS, len: (Math.PI * WIDE_R) / 2, curbs: true }],
     center: wideS,
+  },
+  sweep: {
+    conn: ['W', 'S'],
+    exit: [2, 2],
+    cover: [[0, 0], [1, 0], [1, 1], [2, 1], [2, 2]],
+    ribbons: [{ s: sweepS, len: (Math.PI * SWEEP_R) / 2, curbs: true }],
+    center: sweepS,
   },
   bridge: { conn: ['W', 'E'], ribbons: [{ s: bridgeS, len: T + 1, rails: true, deck: true }], center: bridgeS },
   tunnel: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
@@ -478,8 +532,15 @@ export function buildTrack(track) {
         }
         if (type === 'tunnel') {
           props.push({ kind: 'tunnel', pos: xf.o.clone(), q: xf.q });
+          // The hill and the bore lining collide too: the car can climb over it or bump its sides
+          for (const geo of Object.values(tunnelGeometry())) {
+            const pos = geo.attributes.position;
+            const base = col.pos.length / 3;
+            for (let i = 0; i < pos.count; i++) col.vert(xf.point(v3(pos.getX(i), pos.getY(i), pos.getZ(i))));
+            if (geo.index) for (const k of geo.index.array) col.idx.push(base + k);
+            else for (let i = 0; i < pos.count; i++) col.idx.push(base + i);
+          }
           for (const sd of [-1, 1]) blocks.push({ pos: xf.point(v3(0, 4, sd * (TUNNEL_HW + 0.5))), q: xf.q, half: [H, 4, 0.5] });
-          blocks.push({ pos: xf.point(v3(0, TUNNEL_HW + 4.2, 0)), q: xf.q, half: [H, 0.5, TUNNEL_HW] });
         }
         if (type === 'bridge') props.push({ kind: 'bridge', pos: xf.o.clone(), q: xf.q });
         if (type === 'loop') loops.push({ c, r });

@@ -10,15 +10,17 @@ export function fromPath(name, c, r, heading, path, scenery = []) {
   const track = emptyTrack(name);
   for (const tok of path.trim().split(/\s+/)) {
     const cell = track.cells[r * GRID + c];
-    if (tok === 'WR' || tok === 'WL') {
-      // Wide curve over a 2x2 block. A left turn is the right-hand piece driven backwards.
-      const d = tok === 'WR' ? heading : LEFT[OPP[heading]];
+    if (/^[WC][RL]$/.test(tok)) {
+      // Wide (2x2, W) or sweeping (3x3, C) curve. A left turn is the right-hand piece driven backwards.
+      const right = tok[1] === 'R';
+      const n = tok[0] === 'W' ? 1 : 2;
+      const d = right ? heading : LEFT[OPP[heading]];
       const rot = HEADING_ROT[d];
-      const [dc, dr] = localToGrid(rot, 1, 1);
-      const [ac, ar] = tok === 'WR' ? [c, r] : [c - dc, r - dr];
-      track.cells[ar * GRID + ac] = { t: TYPE_INDEX.wide, r: rot };
-      [c, r] = tok === 'WR' ? [ac + dc, ar + dr] : [ac, ar];
-      heading = tok === 'WR' ? RIGHT[heading] : OPP[d];
+      const [dc, dr] = localToGrid(rot, n, n);
+      const [ac, ar] = right ? [c, r] : [c - dc, r - dr];
+      track.cells[ar * GRID + ac] = { t: TYPE_INDEX[n === 1 ? 'wide' : 'sweep'], r: rot };
+      [c, r] = right ? [ac + dc, ar + dr] : [ac, ar];
+      heading = right ? RIGHT[heading] : OPP[d];
       c += DIRS[heading][0];
       r += DIRS[heading][1];
       continue;
@@ -53,7 +55,7 @@ const forest = (cells) => cells.map(([c, r]) => [c, r, 'trees']);
 const houses = (cells) => cells.map(([c, r]) => [c, r, 'house']);
 
 export const BUILTIN = [
-  // Beginner tracks: long straights, wide flowing curves, no loops or jumps
+  // Beginner tracks: long straights, wide and sweeping curves, no loops or jumps
   fromPath(
     'Easy Oval',
     5, 3, 'E',
@@ -75,6 +77,15 @@ export const BUILTIN = [
     [...forest([[6, 4], [10, 10], [11, 9], [6, 9], [7, 8], [14, 2], [1, 13]]), ...houses([[9, 4], [7, 13], [13, 4]])],
   ),
   fromPath(
+    'Speed Bowl',
+    6, 1, 'E',
+    `F S B S CR
+     S S S CR
+     S S S S CR
+     S S S CR`,
+    [...forest([[6, 4], [9, 5], [7, 6], [1, 10], [13, 11], [0, 1], [15, 4]]), ...houses([[8, 4], [12, 12]])],
+  ),
+  fromPath(
     'River Run',
     3, 13, 'E',
     `F S B S X S S S WL
@@ -83,6 +94,16 @@ export const BUILTIN = [
      S WL WL
      S S S X S S S S S L`,
     [...forest([[5, 9], [6, 10], [8, 9], [9, 11], [13, 9], [14, 10], [14, 5], [7, 3], [8, 2]]), ...houses([[7, 11], [10, 3], [4, 9]])],
+  ),
+  fromPath(
+    'Grand Prix',
+    5, 1, 'E',
+    `F S B S S S CR
+     U S WR WL
+     S X S CR
+     S S S CR
+     S S H S S U S S CR`,
+    [...forest([[5, 5], [6, 6], [7, 10], [5, 11], [8, 4], [10, 4], [14, 13], [0, 0]]), ...houses([[6, 8], [4, 5], [13, 10]])],
   ),
   fromPath(
     'Sunday Drive',
@@ -127,5 +148,5 @@ export const BUILTIN = [
   ),
 ];
 
-const LEVELS = { 'Easy Oval': 'Easy', 'Green Valley': 'Easy', 'River Run': 'Medium', 'Sunday Drive': 'Medium', 'Stunt Park': 'Medium', 'Mountain Pass': 'Hard', 'Mad Loops': 'Hard' };
+const LEVELS = { 'Easy Oval': 'Easy', 'Green Valley': 'Easy', 'Speed Bowl': 'Easy', 'River Run': 'Medium', 'Grand Prix': 'Medium', 'Sunday Drive': 'Medium', 'Stunt Park': 'Medium', 'Mountain Pass': 'Hard', 'Mad Loops': 'Hard' };
 BUILTIN.forEach((t) => (t.level = LEVELS[t.name]));

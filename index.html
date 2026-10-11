@@ -42,7 +42,7 @@
         </section>
 
         <section class="card">
-          <header>Car</header>
+          <header id="carHeader">Car</header>
           <div class="picker">
             <button class="arrow" data-pick="car" data-dir="-1" aria-label="Previous car">‹</button>
             <div class="pick-body car">
@@ -57,6 +57,26 @@
               <span id="carSwatch" class="swatch"></span>
             </div>
             <button class="arrow" data-pick="car" data-dir="1" aria-label="Next car">›</button>
+          </div>
+        </section>
+
+        <section class="card row">
+          <header>Players</header>
+          <div class="seg" id="playersSeg">
+            <button data-players="1">1</button>
+            <button data-players="2" title="Split screen on one keyboard: P1 WASD + Space, P2 arrows + Right Shift">2</button>
+          </div>
+        </section>
+
+        <section class="card hidden" id="p2Card">
+          <header>Player 2 car <span class="keys">arrows · Right Shift drift · . horn</span></header>
+          <div class="picker">
+            <button class="arrow" data-pick="car2" data-dir="-1" aria-label="Previous car for player 2">‹</button>
+            <div class="pick-body car">
+              <div id="car2Name" class="pick-name">—</div>
+              <span id="car2Swatch" class="swatch"></span>
+            </div>
+            <button class="arrow" data-pick="car2" data-dir="1" aria-label="Next car for player 2">›</button>
           </div>
         </section>
 
@@ -114,6 +134,7 @@
         <div class="hud-time"><span id="hudTime">0:00.00</span></div>
         <div class="hud-best">Best <span id="hudBest">—</span></div>
         <div class="hud-lap" id="hudLap"></div>
+        <div class="hud-pos" id="hudPos"></div>
       </div>
       <div class="hud-tc">
         <div class="progress"><i id="hudProg"></i></div>
@@ -203,6 +224,7 @@
           <div><kbd>R</kbd></div><div>Put the car back on the track</div>
           <div><kbd>G</kbd></div><div>Show / hide your best-lap ghost</div>
           <div><kbd>Esc</kbd></div><div>Pause</div>
+          <div>2 players</div><div>Split screen. P1: <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> (or <kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd>), <kbd>Space</kbd>/<kbd>Left Shift</kbd> drift, <kbd>H</kbd> horn, <kbd>C</kbd> camera, <kbd>R</kbd> reset. P2: arrows, <kbd>Right Shift</kbd>/<kbd>/</kbd> drift, <kbd>.</kbd> horn, <kbd>,</kbd> camera, <kbd>Enter</kbd> reset</div>
         </div>
         <p>New to the game? Pick an <b>Easy</b> track with <b>Arcade</b> driving: you can take the turns flat out. Turn on <b>Auto return to track</b> to be put back on the road when you leave it.</p>
         <p>Hit a tree flat out and it snaps (TIMBER!), costing you a bit of speed; slow down and it is a wall. Races last 1 to 5 laps (set in the menu).</p>

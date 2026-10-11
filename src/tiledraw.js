@@ -12,6 +12,7 @@ export const TYPE_COLORS = {
   loop: '#ff4d1f',
   boost: '#39e0ff',
   wide: '#c9d1dc',
+  sweep: '#c9d1dc',
   bridge: '#b9a98a',
   tunnel: '#7a9a52',
   trees: '#3f8a3a',

@@ -3,6 +3,7 @@ export class Input {
   constructor() {
     this.keys = new Set();
     this.steer = 0;
+    this.steers = [0, 0, 0];
     this.handlers = {};
     this.touch = { left: false, right: false, gas: false, brake: false, hb: false };
     window.addEventListener('keydown', (e) => {
@@ -44,17 +45,20 @@ export class Input {
     return codes.some((c) => this.keys.has(c));
   }
 
-  read(dt) {
+  // slot 0: one player, every key and the first gamepad drive.
+  // Split screen: slot 1 = WASD/ZQSD + Space/Left Shift + pad 1, slot 2 = arrows + Right Shift / Slash / Numpad 0 + pad 2.
+  read(dt, slot = 0) {
     const k = this;
-    let throttle = k.has('ArrowUp', 'KeyW', 'KeyZ') || this.touch.gas ? 1 : 0;
-    let brake = k.has('ArrowDown', 'KeyS') || this.touch.brake ? 1 : 0;
-    let target = (k.has('ArrowRight', 'KeyD') || this.touch.right ? 1 : 0) - (k.has('ArrowLeft', 'KeyA', 'KeyQ') || this.touch.left ? 1 : 0);
-    let handbrake = k.has('Space', 'ShiftLeft', 'ShiftRight') || this.touch.hb;
+    const keys = KEYS[slot];
+    let throttle = k.has(...keys.gas) || (!slot && this.touch.gas) ? 1 : 0;
+    let brake = k.has(...keys.brake) || (!slot && this.touch.brake) ? 1 : 0;
+    let target = (k.has(...keys.right) || (!slot && this.touch.right) ? 1 : 0) - (k.has(...keys.left) || (!slot && this.touch.left) ? 1 : 0);
+    let handbrake = k.has(...keys.drift) || (!slot && this.touch.hb);
 
     // Gamepad
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (const p of pads) {
-      if (!p) continue;
+    const pads = (navigator.getGamepads ? [...navigator.getGamepads()] : []).filter(Boolean);
+    const p = pads[Math.max(0, slot - 1)];
+    if (p) {
       const ax = p.axes[0] || 0;
       if (Math.abs(ax) > 0.12) target = ax;
       const rt = p.buttons[7]?.value || 0;
@@ -62,18 +66,32 @@ export class Input {
       if (rt > 0.05 || p.buttons[0]?.pressed) throttle = Math.max(rt, p.buttons[0]?.pressed ? 1 : 0);
       if (lt > 0.05 || p.buttons[2]?.pressed) brake = Math.max(lt, p.buttons[2]?.pressed ? 1 : 0);
       if (p.buttons[1]?.pressed) handbrake = true;
-      const map = { 3: 'KeyC', 9: 'Escape', 8: 'KeyR', 12: 'ArrowUp', 13: 'ArrowDown' };
+      const map = slot === 2 ? { 3: 'Comma', 9: 'Escape', 8: 'Enter' } : { 3: 'KeyC', 9: 'Escape', 8: 'KeyR', 12: 'ArrowUp', 13: 'ArrowDown' };
+      const prev = (this.padPrev[slot] ||= {});
       for (const [b, code] of Object.entries(map)) {
         const pressed = !!p.buttons[b]?.pressed;
-        if (pressed && !this.padPrev[b]) this.emit(code, { pad: true });
-        this.padPrev[b] = pressed;
+        if (pressed && !prev[b]) this.emit(code, { pad: true });
+        prev[b] = pressed;
       }
-      break;
     }
 
     // Keyboard steering ramps for smoothness
-    const rate = Math.abs(target) > Math.abs(this.steer) && Math.sign(target) === Math.sign(this.steer || target) ? 4.5 : 8;
-    this.steer += Math.max(-rate * dt, Math.min(rate * dt, target - this.steer));
-    return { throttle, brake, steer: this.steer, handbrake };
+    let steer = slot ? this.steers[slot] : this.steer;
+    const rate = Math.abs(target) > Math.abs(steer) && Math.sign(target) === Math.sign(steer || target) ? 4.5 : 8;
+    steer += Math.max(-rate * dt, Math.min(rate * dt, target - steer));
+    if (slot) this.steers[slot] = steer;
+    else this.steer = steer;
+    return { throttle, brake, steer, handbrake };
+  }
+
+  resetSteer() {
+    this.steer = 0;
+    this.steers = [0, 0, 0];
   }
 }
+
+const KEYS = [
+  { gas: ['ArrowUp', 'KeyW', 'KeyZ'], brake: ['ArrowDown', 'KeyS'], left: ['ArrowLeft', 'KeyA', 'KeyQ'], right: ['ArrowRight', 'KeyD'], drift: ['Space', 'ShiftLeft', 'ShiftRight'] },
+  { gas: ['KeyW', 'KeyZ'], brake: ['KeyS'], left: ['KeyA', 'KeyQ'], right: ['KeyD'], drift: ['Space', 'ShiftLeft'] },
+  { gas: ['ArrowUp'], brake: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], drift: ['ShiftRight', 'Slash', 'Numpad0'] },
+];

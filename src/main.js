@@ -17,6 +17,15 @@ const isTouch = matchMedia('(pointer: coarse)').matches;
 
 function show(...names) {
   for (const s of screens) $(s).classList.toggle('hidden', !names.includes(s));
+  $('p2hud')?.classList.toggle('hidden', !names.includes('hud'));
+}
+
+// Player 2's HUD is a copy of player 1's with every id prefixed by "p2"
+function cloneHud() {
+  const c = $('hud').cloneNode(true);
+  c.id = 'p2hud';
+  c.querySelectorAll('[id]').forEach((el) => (el.id = 'p2' + el.id));
+  $('hud').after(c);
 }
 
 let toastTimer;
@@ -35,8 +44,11 @@ async function boot() {
   const input = new Input();
   input.bindTouch($('touch'));
   const hud = new Hud();
+  cloneHud();
   const game = new Game(world, audio, input, hud);
-  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, ...prefStore.load() };
+  game.hud2 = new Hud('p2');
+  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, ...prefStore.load() };
+  if (isTouch) prefs.players = 1;
 
   // Track list: built-ins, the player's tracks, and a shared one from the URL
   let tracks = [];
@@ -100,6 +112,26 @@ async function boot() {
     if (game.path && game.mode === 'attract') game.startAttract();
   }
 
+  function selectCar2(i) {
+    prefs.car2 = (i + CARS.length) % CARS.length;
+    savePrefs();
+    const c = CARS[prefs.car2];
+    $('car2Name').textContent = c.name;
+    const hex = `#${c.color.toString(16).padStart(6, '0')}`;
+    $('car2Swatch').style.background = hex;
+    $('car2Swatch').style.color = hex;
+    game.setPlayers(prefs.players, prefs.car2);
+  }
+
+  function selectPlayers(n) {
+    prefs.players = n;
+    savePrefs();
+    game.setPlayers(n, prefs.car2);
+    $('p2Card').classList.toggle('hidden', n < 2);
+    $('carHeader').textContent = n < 2 ? 'Car' : 'Player 1 car';
+    document.querySelectorAll('#playersSeg button').forEach((b) => b.classList.toggle('on', +b.dataset.players === n));
+  }
+
   function selectPreset(name) {
     prefs.preset = name;
     savePrefs();
@@ -140,15 +172,22 @@ async function boot() {
     }
     show('menu');
     game.startAttract();
+    document.body.classList.remove('split');
   }
 
   function race() {
     audio.unlock();
     show('hud', ...(isTouch ? ['touch'] : []));
     game.startRace();
+    document.body.classList.toggle('split', !!game.p2);
   }
 
+  const finTitle = document.querySelector('.finish-title');
   hud.onFinish = (r) => {
+    document.querySelector('#finish [data-act=replay]').classList.toggle('hidden', !!r.split);
+    if (r.split) return finishSplit(r);
+    finTitle.textContent = 'FINISH';
+    $('finDetail').style.whiteSpace = '';
     $('finTime').textContent = fmtTime(r.time);
     $('finTrack').textContent = `${r.track} · ${CARS[game.carIdx].name}`;
     $('finRecord').classList.toggle('hidden', !r.isBest);
@@ -166,6 +205,25 @@ async function boot() {
       if (game.mode === 'finished') show('finish', 'hud');
     }, 1200);
   };
+
+  function finishSplit(r) {
+    const w = r.results[r.winner];
+    finTitle.textContent = w.time != null ? `${w.name.toUpperCase()} WINS!` : 'NO WINNER';
+    $('finTime').textContent = fmtTime(w.time);
+    $('finTrack').textContent = r.track;
+    $('finRecord').classList.add('hidden');
+    $('finDetail').textContent = r.results
+      .map((p) => {
+        const laps = p.lapTimes.length > 1 ? ` (${p.lapTimes.map(fmtTime).join(' · ')})` : '';
+        const gap = p !== w && p.time != null ? ` +${(p.time - w.time).toFixed(2)}s` : '';
+        return `${p.name} · ${CARS[p.car].name}: ${p.time != null ? fmtTime(p.time) + gap : 'DNF'}${laps}`;
+      })
+      .join('\n');
+    $('finDetail').style.whiteSpace = 'pre-line';
+    setTimeout(() => {
+      if (game.mode === 'finished') show('finish', 'hud');
+    }, 1200);
+  }
 
   // --- Editor
   const editor = new Editor({
@@ -190,11 +248,13 @@ async function boot() {
     b.addEventListener('click', () => {
       const d = +b.dataset.dir;
       if (b.dataset.pick === 'track') selectTrack(trackIdx + d);
+      else if (b.dataset.pick === 'car2') selectCar2(prefs.car2 + d);
       else selectCar(prefs.car + d);
     }),
   );
   document.querySelectorAll('#presetSeg button').forEach((b) => b.addEventListener('click', () => selectPreset(b.dataset.preset)));
   document.querySelectorAll('#lapsSeg button').forEach((b) => b.addEventListener('click', () => selectLaps(+b.dataset.laps)));
+  document.querySelectorAll('#playersSeg button').forEach((b) => b.addEventListener('click', () => selectPlayers(+b.dataset.players)));
   document.querySelectorAll('#handlingSeg button').forEach((b) => b.addEventListener('click', () => selectHandling(b.dataset.handling)));
   document.querySelectorAll('#autoReturnSeg button').forEach((b) => b.addEventListener('click', () => selectAutoReturn(b.dataset.auto === 'on')));
   $('btnRace').onclick = race;
@@ -287,6 +347,9 @@ async function boot() {
     }
     if (code === 'KeyC' && m !== 'replay') game.rig.cycle();
     if (code === 'KeyH' && m !== 'replay') audio.horn(CARS[game.carIdx].horn);
+    const p2 = game.p2;
+    if (p2 && code === 'Comma') p2.rig.cycle();
+    if (p2 && code === 'Period') audio.horn(CARS[p2.carIdx].horn);
     if (code === 'KeyM') {
       audio.setMuted(!audio.muted);
       soundLabel();
@@ -302,6 +365,7 @@ async function boot() {
         show('pause');
       }
       if (code === 'KeyR') game.respawn(null);
+      if (p2 && (code === 'Enter' || code === 'NumpadEnter')) game.respawn(null, p2);
     } else if (m === 'paused') {
       if (code === 'Escape' || code === 'KeyP') act('resume');
     } else if (m === 'replay') {
@@ -321,6 +385,9 @@ async function boot() {
   game.laps = prefs.laps;
   document.querySelectorAll('#lapsSeg button').forEach((b) => b.classList.toggle('on', +b.dataset.laps === prefs.laps));
   selectCar(prefs.car);
+  selectCar2(prefs.car2);
+  selectPlayers(prefs.players);
+  if (isTouch) $('playersSeg').closest('.card').classList.add('hidden');
   selectPreset(prefs.preset);
   selectTrack(trackIdx);
   $('loading').classList.add('hidden');

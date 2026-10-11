@@ -7,7 +7,7 @@ import { initPhysics, Physics, Car, CARS, DT, TREE_SNAP_SPEED } from '../src/phy
 await initPhysics();
 const built = buildTrack(BUILTIN[0]);
 let failed = 0;
-for (const v0 of [TREE_SNAP_SPEED + 12, TREE_SNAP_SPEED - 6]) {
+for (const v0 of [TREE_SNAP_SPEED + 20, TREE_SNAP_SPEED - 3]) {
   const phys = new Physics(built);
   const ti = phys.trees.findIndex((t) => phys.trees.every((o) => o === t || Math.hypot(o.x - t.x, o.z - t.z) > 6 || Math.abs(o.z - t.z) > 3));
   const tree = phys.trees[ti];

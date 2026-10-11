@@ -3,7 +3,7 @@
 import { BUILTIN } from '../src/tracks.js';
 import { tracePath, occupancy, GRID, TYPES } from '../src/track.js';
 
-const SYM = { start: 'F', straight: '=', curve: 'c', bank: 'b', ramp: 'K', jump: 'J', hump: 'h', loop: 'O', boost: 'B', wide: 'W', bridge: 'X', tunnel: 'U', trees: '.', house: '^' };
+const SYM = { start: 'F', straight: '=', curve: 'c', bank: 'b', ramp: 'K', jump: 'J', hump: 'h', loop: 'O', boost: 'B', wide: 'W', sweep: 'C', bridge: 'X', tunnel: 'U', trees: '.', house: '^' };
 let bad = 0;
 for (const t of BUILTIN) {
   if (process.argv[2] && !t.name.includes(process.argv[2])) continue;

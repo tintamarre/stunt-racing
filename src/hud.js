@@ -1,8 +1,6 @@
 // HUD: timer, speedometer, progress, minimap, messages.
 import { FIELD } from './terrain.js';
 
-const $ = (id) => document.getElementById(id);
-
 export function fmtTime(t) {
   if (t == null || !isFinite(t)) return '—';
   const m = Math.floor(t / 60);
@@ -11,11 +9,14 @@ export function fmtTime(t) {
 }
 
 export class Hud {
-  constructor() {
+  // prefix: id prefix of a cloned HUD (split screen player 2)
+  constructor(prefix = '') {
+    const $ = (id) => document.getElementById(prefix + id);
     this.el = {
       time: $('hudTime'),
       best: $('hudBest'),
       lap: $('hudLap'),
+      pos: $('hudPos'),
       prog: $('hudProg'),
       progTxt: $('hudProgTxt'),
       speed: $('hudSpeed'),
@@ -87,6 +88,7 @@ export class Hud {
     set('cam', e.cam, s.cam);
     set('prog', e.progTxt, `${s.visited}/${s.total}`);
     set('lap', e.lap, s.laps > 1 ? `LAP ${Math.min(s.lap, s.laps)}/${s.laps}` : '');
+    if (e.pos) set('pos', e.pos, s.pos ? ['', '1ST', '2ND'][s.pos] : '');
     const pw = `${(100 * s.visited) / Math.max(1, s.total)}%`;
     if (this.last.pw !== pw) {
       this.last.pw = pw;
@@ -115,6 +117,7 @@ export class Hud {
         c.fill();
       };
       if (s.ghost) dot(s.ghost, 'rgba(120,220,255,0.8)', 5);
+      if (s.other) dot(s.other, '#3a8bff', 6.5);
       c.strokeStyle = '#fff';
       c.lineWidth = 2;
       dot(s.car, '#ff4d1f', 6.5);

@@ -44,8 +44,11 @@ export class Editor {
         x.moveTo(54, 18);
         x.lineTo(18, 54);
         x.stroke();
-      } else if (PIECES[it.id]?.cover) drawPiece(x, it.id, 0, 0, 0, 36);
-      else drawPiece(x, it.id, 0, 0, 0, 72);
+      } else {
+        // Multi-cell pieces are drawn small enough for their whole block to fit
+        const span = 1 + Math.max(0, ...(PIECES[it.id]?.cover || []).flat());
+        drawPiece(x, it.id, 0, 0, 0, 72 / span);
+      }
       const span = document.createElement('span');
       span.textContent = it.label;
       b.append(c, span);
