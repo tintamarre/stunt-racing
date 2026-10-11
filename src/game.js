@@ -10,6 +10,7 @@ import { Particles, Skids } from './effects.js';
 import { Autopilot } from './autopilot.js';
 import { records } from './storage.js';
 import { terrainHeight } from './terrain.js';
+import { Damage } from './damage.js';
 
 const FR = 16; // floats per recorded frame
 const MAX_FRAMES = 60 * 60 * 12;
@@ -135,6 +136,7 @@ export class Game {
     p2.model.setNight(this.world.preset.night);
     this.world.scene.add(p2.model.group);
     p2.autopilot = new Autopilot(this.path);
+    p2.damage = new Damage(p2, this);
     this.p2 = p2;
     this.syncTransforms(true, p2);
     this.world.setSplit(true);
@@ -167,6 +169,7 @@ export class Game {
     this.model.setNight(this.world.preset.night);
     this.world.scene.add(this.model.group);
     this.autopilot = new Autopilot(this.path);
+    this.damage = new Damage(this, this);
     this.syncTransforms(true);
     this.rig.snap = true;
     this.setupGhost();
@@ -245,6 +248,7 @@ export class Game {
       pl.flipT = 0;
       pl.offT = 0;
       pl.skids.clear();
+      pl.damage?.reset();
       pl.rig.snap = true;
       pl.prevLocalX = -99;
       pl.loopFlag = false;
@@ -353,6 +357,7 @@ export class Game {
   afterStep(pl) {
     const car = pl.car;
     this.syncTransforms(false, pl);
+    pl.damage?.step();
     const p = pl.curr.p;
     const v = car.vehicle;
     pl.spin += (v.currentVehicleSpeed() * DT) / (car.spec.wheelR ?? 0.36);
@@ -669,6 +674,7 @@ export class Game {
     }
 
     this.particles.update(this.mode === 'paused' || (this.mode === 'replay' && this.replayPaused) ? 0 : dt);
+    for (const pl of pls) pl.damage?.update(sim ? dt : 0);
 
     // Cameras
     const speeds = pls.map((pl, i) => {

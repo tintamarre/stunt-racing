@@ -357,6 +357,135 @@ export class CarModel {
     }
   }
 
+  // ---------------------------------------------------------------- damage (visual only)
+  // Body parts sorted once: big hull pieces get dented, small ones can fly off.
+  damageParts() {
+    if (this.parts) return this.parts;
+    const box = new THREE.Box3();
+    const size = new THREE.Vector3();
+    this.group.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(this.group.matrixWorld).invert();
+    const hull = [];
+    const loose = [];
+    for (const c of this.body.children) {
+      box.setFromObject(c).applyMatrix4(inv);
+      const r = box.getSize(size).length() / 2;
+      if (r > 1.3) c.traverse((o) => o.isMesh && hull.push(o));
+      else if (r < 1.0) loose.push({ obj: c, parent: c.parent, pos: c.position.clone(), q: c.quaternion.clone(), scale: c.scale.clone() });
+    }
+    this.parts = { hull, loose };
+    return this.parts;
+  }
+
+  // Push the hull in around a body-space point, along dir (body space, pointing into the car)
+  dent(point, dir, amount) {
+    if (this.ghost) return;
+    const { hull } = this.damageParts();
+    this.group.updateMatrixWorld(true);
+    const wp = this.body.localToWorld(point.clone());
+    const wd = dir.clone().transformDirection(this.body.matrixWorld);
+    const lp = new THREE.Vector3();
+    const ld = new THREE.Vector3();
+    const v = new THREE.Vector3();
+    const inv = new THREE.Matrix4();
+    const R = 0.75;
+    for (const m of hull) {
+      if (!m.userData.origGeo) {
+        m.userData.origGeo = m.geometry;
+        m.geometry = m.geometry.clone();
+        m.userData.rest = Float32Array.from(m.geometry.attributes.position.array);
+      }
+      inv.copy(m.matrixWorld).invert();
+      lp.copy(wp).applyMatrix4(inv);
+      ld.copy(wd).transformDirection(inv);
+      const pos = m.geometry.attributes.position;
+      const rest = m.userData.rest;
+      let touched = false;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i);
+        const d = v.distanceTo(lp);
+        if (d > R) continue;
+        const k = (1 - d / R) ** 2 * amount;
+        v.addScaledVector(ld, k);
+        // Cap the total displacement so the car stays recognisable
+        const ox = v.x - rest[i * 3];
+        const oy = v.y - rest[i * 3 + 1];
+        const oz = v.z - rest[i * 3 + 2];
+        const len = Math.hypot(ox, oy, oz);
+        if (len > 0.32) v.set(rest[i * 3] + (ox * 0.32) / len, rest[i * 3 + 1] + (oy * 0.32) / len, rest[i * 3 + 2] + (oz * 0.32) / len);
+        pos.setXYZ(i, v.x, v.y, v.z);
+        touched = true;
+      }
+      if (touched) {
+        pos.needsUpdate = true;
+        m.geometry.computeVertexNormals();
+      }
+    }
+  }
+
+  // Fling a small random part off the car; returns false when none is left
+  detachPart(vel, near) {
+    if (this.ghost || !this.group.parent) return false;
+    const left = this.damageParts().loose.filter((p) => p.obj.parent === p.parent);
+    if (!left.length) return false;
+    // Prefer parts close to the impact
+    left.sort((a, b) => a.pos.distanceTo(near) - b.pos.distanceTo(near));
+    const part = left[Math.floor(Math.random() * Math.min(3, left.length))];
+    this.group.parent.attach(part.obj);
+    this.debris ??= [];
+    this.debris.push({
+      part,
+      vel: new THREE.Vector3(vel.x * 0.6 + (Math.random() - 0.5) * 6, 5 + Math.random() * 5, vel.z * 0.6 + (Math.random() - 0.5) * 6),
+      spin: new THREE.Vector3((Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18, (Math.random() - 0.5) * 18),
+      t: 0,
+    });
+    return true;
+  }
+
+  updateDebris(dt, ground) {
+    if (!this.debris?.length) return;
+    for (const d of this.debris) {
+      const o = d.part.obj;
+      if (!o.visible) continue;
+      d.t += dt;
+      d.vel.y -= 9.81 * dt;
+      o.position.addScaledVector(d.vel, dt);
+      o.rotation.x += d.spin.x * dt;
+      o.rotation.y += d.spin.y * dt;
+      o.rotation.z += d.spin.z * dt;
+      const gy = ground(o.position.x, o.position.z) + 0.15;
+      if (o.position.y < gy) {
+        o.position.y = gy;
+        d.vel.y = Math.abs(d.vel.y) * 0.35;
+        d.vel.x *= 0.6;
+        d.vel.z *= 0.6;
+        d.spin.multiplyScalar(0.5);
+      }
+      // Shrink away after a few seconds
+      if (d.t > 4) o.scale.copy(d.part.scale).multiplyScalar(Math.max(0, 5 - d.t));
+      if (d.t > 5) o.visible = false;
+    }
+  }
+
+  repair() {
+    for (const d of this.debris || []) {
+      const { obj, parent, pos, q, scale } = d.part;
+      parent.add(obj);
+      obj.position.copy(pos);
+      obj.quaternion.copy(q);
+      obj.scale.copy(scale);
+      obj.visible = true;
+    }
+    this.debris = [];
+    for (const m of this.parts?.hull || []) {
+      if (!m.userData.origGeo) continue;
+      m.geometry.dispose();
+      m.geometry = m.userData.origGeo;
+      delete m.userData.origGeo;
+      delete m.userData.rest;
+    }
+  }
+
   setNight(on) {
     if (this.headlight) this.headlight.intensity = on ? 900 : 0;
   }
