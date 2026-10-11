@@ -143,6 +143,57 @@ export class Audio {
     o.stop(c.currentTime + dur + 0.02);
   }
 
+  // Metal crunch: a bright noise burst plus a few detuned clanks
+  crunch(strength) {
+    if (!this.ctx) return;
+    const c = this.ctx;
+    const t = c.currentTime;
+    const src = c.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = c.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.2;
+    f.frequency.setValueAtTime(1800 + strength * 1500, t);
+    f.frequency.exponentialRampToValueAtTime(500, t + 0.3);
+    const g = c.createGain();
+    g.gain.setValueAtTime(Math.min(1, 0.35 + strength) * 0.6, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    src.connect(f).connect(g).connect(this.master);
+    src.start();
+    src.stop(t + 0.4);
+    for (let k = 0; k < 3; k++) {
+      const o = c.createOscillator();
+      o.type = 'square';
+      o.frequency.value = 180 + Math.random() * 520;
+      const og = c.createGain();
+      const t0 = t + k * 0.05 + Math.random() * 0.03;
+      og.gain.setValueAtTime(0.0001, t);
+      og.gain.setValueAtTime(0.12 * strength + 0.04, t0);
+      og.gain.exponentialRampToValueAtTime(0.001, t0 + 0.12);
+      o.connect(og).connect(this.master);
+      o.start(t);
+      o.stop(t0 + 0.15);
+    }
+  }
+
+  // Exhaust backfire: a short low pop
+  backfire() {
+    if (!this.ctx) return;
+    const c = this.ctx;
+    const t = c.currentTime;
+    const src = c.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = c.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.value = 600;
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.9, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    src.connect(f).connect(g).connect(this.master);
+    src.start();
+    src.stop(t + 0.2);
+  }
+
   whoosh() {
     if (!this.ctx) return;
     const c = this.ctx;
