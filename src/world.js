@@ -8,6 +8,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeTextures } from './textures.js';
+import { Precipitation, weatherPreset, addSnowCover, snowCover } from './weather.js';
 import { terrainHeight, setRelief, fbm, outside, CENTER, TERRAIN_SIZE, FIELD } from './terrain.js';
 import { T, LOOP_R, ROAD_W, TUNNEL_HW, TUNNEL_WALL, tunnelGeometry } from './track.js';
 
@@ -147,6 +148,9 @@ export class World {
 
     this.trackGroup = null;
     this.animated = [];
+    this.weather = 'clear';
+    this.flash = 0;
+    this.precip = new Precipitation(this.scene);
     this.setPreset('day');
     window.addEventListener('resize', () => this.resize());
   }
@@ -170,14 +174,32 @@ export class World {
     this.renderer.shadowMap.enabled = !low;
     this.sun.castShadow = !low;
     this.bloom.enabled = !low;
+    this.precip.set(this.weather, q, this.preset.night);
     this.resize();
     this.scene.traverse((o) => {
       if (o.material) o.material.needsUpdate = true;
     });
   }
 
+  setWeather(kind) {
+    this.weather = kind;
+    snowCover.value = kind === 'snow' ? 1 : 0;
+    this.setPreset(this.presetName);
+    this.applyRoad();
+  }
+
+  // Wet asphalt is darker and glossy, snowy asphalt pale and matt
+  applyRoad() {
+    const m = this.roadMat;
+    if (!m) return;
+    const look = { clear: [0xffffff, 0.82, 0], rain: [0x6f757d, 0.22, 0.2], snow: [0xc4ccd6, 0.72, 0] }[this.weather];
+    m.color.set(look[0]);
+    m.roughness = look[1];
+    m.metalness = look[2];
+  }
+
   setPreset(name) {
-    const p = PRESETS[name];
+    const p = weatherPreset(PRESETS[name], this.weather);
     this.preset = p;
     this.presetName = name;
     const u = this.sky.material.uniforms;
@@ -196,7 +218,7 @@ export class World {
     this.hemi.groundColor.set(p.hemiGround);
     this.hemi.intensity = p.hemiI;
     this.scene.fog = new THREE.FogExp2(p.fog, p.fogDensity);
-    this.stars.visible = p.night;
+    this.stars.visible = p.night && this.weather === 'clear';
     this.bloom.threshold = p.night ? 1.2 : 4;
     this.bloom.strength = p.night ? 0.8 : 0.25;
     this.bloom.radius = p.night ? 0.6 : 0.4;
@@ -221,6 +243,7 @@ export class World {
     this.scene.environment = this.envRT.texture;
     this.scene.environmentIntensity = p.night ? 0.4 : 0.55;
     for (const m of this.nightMaterials || []) m.emissiveIntensity = p.night ? m.userData.nightI : m.userData.dayI;
+    this.precip.set(this.weather, this.quality, p.night);
   }
 
   buildTerrain() {
@@ -262,7 +285,7 @@ export class World {
     this.terrainGeo = g;
     this.terrainY = Float32Array.from({ length: pos.count }, (_, i) => pos.getY(i));
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.tex.grass, roughness: 1, metalness: 0 });
-    this.terrainMat = mat;
+    this.terrainMat = addSnowCover(mat, 0.85);
     const terrain = new THREE.Mesh(g, mat);
     terrain.receiveShadow = true;
     this.scene.add(terrain);
@@ -330,6 +353,8 @@ export class World {
         polygonOffsetFactor: -4,
       }),
     };
+    this.roadMat = mats.road;
+    this.applyRoad();
     const boostTex = tx.boost.clone();
     boostTex.needsUpdate = true;
     mats.boost.map = boostTex;
@@ -549,7 +574,7 @@ export class World {
     const grass = this.tex.grass.clone();
     grass.needsUpdate = true;
     grass.repeat.set(span / 6, span / 6);
-    const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: grass, roughness: 1, metalness: 0 }));
+    const mesh = new THREE.Mesh(g, addSnowCover(new THREE.MeshStandardMaterial({ vertexColors: true, map: grass, roughness: 1, metalness: 0 }), 0.85));
     mesh.receiveShadow = true;
     group.add(mesh);
   }
@@ -609,7 +634,7 @@ export class World {
     const roundG = new THREE.IcosahedronGeometry(2.2, 1);
     roundG.translate(0, 4.2, 0);
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a2f, roughness: 1 });
-    const leafMat = new THREE.MeshStandardMaterial({ color: 0x4f8f35, roughness: 0.85, flatShading: true });
+    const leafMat = addSnowCover(new THREE.MeshStandardMaterial({ color: 0x4f8f35, roughness: 0.85, flatShading: true }), 0.6);
     const trunks = new THREE.InstancedMesh(trunkG, trunkMat, n);
     const pines = new THREE.InstancedMesh(pineG, leafMat, n);
     const rounds = new THREE.InstancedMesh(roundG, leafMat, n);
@@ -688,9 +713,17 @@ export class World {
 
   update(t, focus) {
     for (const f of this.animated) f(t);
-    this.animateTrees(Math.max(0, Math.min(0.1, t - (this.lastT ?? t))));
+    const dt = Math.max(0, Math.min(0.1, t - (this.lastT ?? t)));
+    this.animateTrees(dt);
     this.lastT = t;
     this.focusOn(focus, this.camera);
+    this.precip.update(t);
+    // Lightning on rainy nights
+    if (this.weather === 'rain' && this.preset.night) {
+      if (Math.random() < dt * 0.1) this.flash = 1;
+      this.flash *= Math.exp(-dt * 7);
+      this.hemi.intensity = this.preset.hemiI + this.flash * (Math.random() < 0.7 ? 3 : 1);
+    }
   }
 
   // Split screen: two players side by side (top / bottom on a portrait screen)
@@ -714,6 +747,7 @@ export class World {
     this.sun.target.position.set(fx, focus.y, fz);
     this.sun.position.set(fx, focus.y, fz).addScaledVector(this.lightDir, 200);
     this.sky.position.copy(camera.position);
+    this.precip.center(camera);
   }
 
   // shots: [{ camera, focus }] per player. Split screen renders straight to the canvas

@@ -47,7 +47,7 @@ async function boot() {
   cloneHud();
   const game = new Game(world, audio, input, hud);
   game.hud2 = new Hud('p2');
-  const prefs = { car: 0, preset: 'day', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, opponents: 3, ai: 'normal', ...prefStore.load() };
+  const prefs = { car: 0, preset: 'day', weather: 'clear', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, opponents: 3, ai: 'normal', ...prefStore.load() };
   if (isTouch) prefs.players = 1;
 
   // Track list: built-ins, the player's tracks, and a shared one from the URL
@@ -140,6 +140,13 @@ async function boot() {
     $('p2Card').classList.toggle('hidden', n < 2);
     $('carHeader').textContent = n < 2 ? 'Car' : 'Player 1 car';
     document.querySelectorAll('#playersSeg button').forEach((b) => b.classList.toggle('on', +b.dataset.players === n));
+  }
+
+  function selectWeather(name) {
+    prefs.weather = name;
+    savePrefs();
+    game.setWeather(name);
+    document.querySelectorAll('#weatherSeg button').forEach((b) => b.classList.toggle('on', b.dataset.weather === name));
   }
 
   function selectPreset(name) {
@@ -268,6 +275,7 @@ async function boot() {
     }),
   );
   document.querySelectorAll('#presetSeg button').forEach((b) => b.addEventListener('click', () => selectPreset(b.dataset.preset)));
+  document.querySelectorAll('#weatherSeg button').forEach((b) => b.addEventListener('click', () => selectWeather(b.dataset.weather)));
   document.querySelectorAll('#lapsSeg button').forEach((b) => b.addEventListener('click', () => selectLaps(+b.dataset.laps)));
   document.querySelectorAll('#playersSeg button').forEach((b) => b.addEventListener('click', () => selectPlayers(+b.dataset.players)));
   document.querySelectorAll('#oppSeg button').forEach((b) => b.addEventListener('click', () => selectOpponents(+b.dataset.opp)));
@@ -406,6 +414,7 @@ async function boot() {
   selectPlayers(prefs.players);
   selectOpponents(prefs.opponents, prefs.ai);
   if (isTouch) $('playersSeg').closest('.card').classList.add('hidden');
+  selectWeather(prefs.weather);
   selectPreset(prefs.preset);
   selectTrack(trackIdx);
   $('loading').classList.add('hidden');

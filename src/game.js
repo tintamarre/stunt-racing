@@ -10,6 +10,7 @@ import { Particles, Skids } from './effects.js';
 import { Autopilot } from './autopilot.js';
 import { records } from './storage.js';
 import { terrainHeight } from './terrain.js';
+import { WEATHER_GRIP } from './weather.js';
 
 const FR = 16; // floats per recorded frame
 const MAX_FRAMES = 60 * 60 * 12;
@@ -101,7 +102,7 @@ export class Game {
         slot: 0,
         name: BOT_NAMES[i % BOT_NAMES.length],
         carIdx,
-        car: new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade }),
+        car: new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade, grip: this.weatherGrip }),
         model: new CarModel(spec),
         autopilot: new Autopilot(this.path, { speedK: lvl.speedK * (0.97 + 0.06 * Math.random()), wobble: lvl.wobble, lane: ((i % 3) - 1) * 2.2, arcade: this.arcade }),
         rig: { shake: 0, snap: false },
@@ -202,7 +203,7 @@ export class Game {
       slot: 2,
       name: 'Player 2',
       carIdx: this.car2Idx,
-      car: new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade }),
+      car: new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade, grip: this.weatherGrip }),
       model: new CarModel(spec),
       rig,
       hud: this.hud2,
@@ -241,7 +242,7 @@ export class Game {
       this.physics.world.removeRigidBody(this.car.body);
     }
     const pose = this.spawnPose(0);
-    this.car = new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade });
+    this.car = new Car(this.physics, spec, pose.pos, pose.q, { arcade: this.arcade, grip: this.weatherGrip });
     this.model = new CarModel(spec);
     this.model.setNight(this.world.preset.night);
     this.world.scene.add(this.model.group);
@@ -283,9 +284,16 @@ export class Game {
     for (const pl of this.racers()) if (pl.car) pl.car.arcade = arcade;
   }
 
+  setWeather(kind) {
+    this.weatherGrip = WEATHER_GRIP[kind] ?? 1;
+    this.world.setWeather(kind);
+    this.audio.setWeather(kind);
+    for (const pl of this.everyone()) if (pl.car) pl.car.surfaceGrip = this.weatherGrip;
+  }
+
   setPreset(name) {
     this.world.setPreset(name);
-    for (const pl of this.racers()) pl.model?.setNight(this.world.preset.night);
+    for (const pl of this.everyone()) pl.model?.setNight(this.world.preset.night);
   }
 
   syncTransforms(both, pl = this) {

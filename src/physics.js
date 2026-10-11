@@ -171,6 +171,8 @@ export class Car {
     this.spec = spec;
     // Arcade handling: kart-style yaw control, strong grip and drift with mini-turbo.
     this.arcade = opts.arcade ?? false;
+    // Weather grip multiplier (1 = dry, lower on wet or snowy roads)
+    this.surfaceGrip = opts.grip ?? 1;
     const w = physics.world;
     const bd = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(pos.x, pos.y, pos.z)
@@ -326,7 +328,7 @@ export class Car {
       v.setWheelEngineForce(i, -(front ? engine * 0.2 : engine * 0.8)); // Rapier: negative = forward
       v.setWheelBrake(i, front ? brake * 0.6 : brake * 0.4 + (hb ? 90 : 0));
       const slipK = !front && hb ? 0.45 : 1;
-      v.setWheelFrictionSlip(i, spec.grip * slipK * (1 - this.onGrass * 0.3));
+      v.setWheelFrictionSlip(i, spec.grip * slipK * (1 - this.onGrass * 0.3) * this.surfaceGrip);
       v.setWheelSideFrictionStiffness(i, this.drift ? 0.3 : 1);
     }
 
@@ -487,7 +489,7 @@ export class Car {
     // Yaw rate from steering (reversed when backing up). Into the drift tightens, counter-steer widens.
     const k = this.drift ? -this.drift * (0.7 + 0.5 * input.steer * this.drift) : -input.steer;
     // Max yaw rate grows with speed so a 90° tile curve is takeable flat out (radius ~13 m at top speed)
-    const yawMax = Math.min(3.4, 0.9 + speed / 18) * (this.drift ? 1.15 : 1) * Math.min(1, speed / 4) * (1 - this.onGrass * 0.25);
+    const yawMax = Math.min(3.4, 0.9 + speed / 18) * (this.drift ? 1.15 : 1) * Math.min(1, speed / 4) * (1 - this.onGrass * 0.25) * (0.8 + 0.2 * this.surfaceGrip);
     const target = k * yawMax * (vf < -0.5 ? -1 : 1);
     const av = body.angvel();
     const w = tmpV2.set(av.x, av.y, av.z);
@@ -500,7 +502,7 @@ export class Car {
     const vr = vel.dot(right);
     // Hard steering at speed lets the tail step out a little, even without drifting
     const slide = Math.abs(input.steer) * Math.min(1, speed / 35);
-    const vr2 = vr * Math.exp(-(this.drift ? 2.2 : 9 - 5 * slide) * dt);
+    const vr2 = vr * Math.exp(-(this.drift ? 2.2 : 9 - 5 * slide) * this.surfaceGrip ** 1.5 * dt);
     const gain = Math.abs(vf) > 3 ? 0.9 : 0;
     const vf2 = Math.sign(vf) * Math.sqrt(vf * vf + (vr * vr - vr2 * vr2) * gain);
     vel.addScaledVector(right, vr2 - vr).addScaledVector(fwd, vf2 - vf);

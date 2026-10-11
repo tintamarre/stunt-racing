@@ -9,7 +9,7 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 - Real-time vehicle physics (Rapier raycast vehicle) with air control and a loop assist.
 - Two driving modes: **Arcade** (default, kart-style: turns can be taken flat out, hold the drift button for a mini-turbo) and **Classic** (realistic grip, handbrake).
 - Optional *Auto return to track*: puts the car back on the road after a moment on the grass (off by default).
-- Six cars (three of them silly), eleven built-in tracks (three easy ones for beginners, two in the mountains with climbs and descents) with wide (2×2) and sweeping (3×3) curves, bridges over streams and solid tunnels you can also drive over, day / sunset / night lighting.
+- Six cars (three of them silly), eleven built-in tracks (three easy ones for beginners, two in the mountains with climbs and descents) with wide (2×2) and sweeping (3×3) curves, bridges over streams and solid tunnels you can also drive over, day / sunset / night lighting, and clear / rain / snow weather (slippery roads, falling rain or snow, wet or snowy look).
 - 1 to 5 lap races, with lap times and a best time per lap count.
 - Up to 5 computer opponents (easy / normal / hard) on a starting grid, with live positions and final standings. They ease off when ahead and push when behind, so races stay close.
 - Trees hit above ~20 km/h snap and let the car through, at the cost of some speed. Scraping a wall at a shallow angle slides the car along it; only a big wall hit head-on stops it.
