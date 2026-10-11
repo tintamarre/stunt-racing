@@ -14,6 +14,7 @@ import { WEATHER_GRIP } from './weather.js';
 import { Damage } from './damage.js';
 import { Items } from './items.js';
 import { Coins } from './coins.js';
+import { Stunts } from './stunts.js';
 
 const FR = 16; // floats per recorded frame
 const MAX_FRAMES = 60 * 60 * 12;
@@ -75,6 +76,7 @@ export class Game {
     this.bots = [];
     this.items = new Items(this);
     this.coinField = new Coins(this);
+    this.stunts = new Stunts();
   }
 
   setItems(on) {
@@ -348,6 +350,7 @@ export class Game {
       pl.car.reset(pose.pos, pose.q);
       this.syncTransforms(true, pl);
       pl.autopilot.reset(pose.k);
+      this.stunts.reset(pl);
       pl.trackIdx = pose.k;
       pl.missedT = 0;
       pl.lastCi = this.path.points[pose.k].cell;
@@ -411,6 +414,7 @@ export class Game {
     pl.offT = 0;
     pl.rig.snap = true;
     if (reason) {
+      this.stunts.bail(pl);
       pl.crashes++;
       pl.hud.message(reason, 'crash', 1.4);
       if (!pl.bot) this.audio.impact(1);
@@ -532,6 +536,7 @@ export class Game {
         pl.visited = new Set([0]);
       }
       if (pl.missedT > 0) pl.missedT -= DT;
+      this.stunts.step(pl, racing);
       // Crash / stuck detection
       const up = car.up(tmp);
       if (up.y < 0.25 && car.speed() < 3) pl.flipT += DT;
@@ -582,6 +587,9 @@ export class Game {
         const upright = car.up(tmp).y > 0.6;
         if (upright && car.lastSpin > 5.2) pl.hud.message(car.lastSpin > 11 ? 'DOUBLE FLIP!' : 'FLIP!', 'air', 1.2);
         else if (upright && car.lastAir > 1.1) pl.hud.message(`BIG AIR ${car.lastAir.toFixed(1)}s`, 'air', 1.1);
+        if (upright && car.lastSpin > 11) this.stunts.add(pl, 'DOUBLE FLIP', 1500);
+        else if (upright && car.lastSpin > 5.2) this.stunts.add(pl, 'FLIP', 600);
+        if (upright && car.lastAir > 0.8) this.stunts.add(pl, 'AIR', car.lastAir * 200);
       }
     }
     // Loop callout once the car has been upside down inside a loop
@@ -590,6 +598,7 @@ export class Game {
       pl.loopFlag = false;
       if (this.mode === 'race' && car.up(tmp).y > 0.6 && !pl.bot) {
         pl.hud.message('LOOP!', 'air', 1);
+        this.stunts.add(pl, 'LOOP', 400);
         this.audio.whoosh();
       }
     }
@@ -602,6 +611,7 @@ export class Game {
       if (this.mode === 'race' && !pl.bot) {
         this.audio.whoosh();
         pl.hud.message(car.turboEvent === 2 ? 'SUPER TURBO!' : 'MINI-TURBO!', 'boost', 0.7);
+        this.stunts.add(pl, car.turboEvent === 2 ? 'SUPER TURBO' : 'MINI-TURBO', car.turboEvent === 2 ? 300 : 150);
       }
       car.turboEvent = 0;
     }
@@ -692,6 +702,7 @@ export class Game {
     this.audio.impact(0.6);
     pl.rig.shake = Math.max(pl.rig.shake, 0.35);
     pl.hud.message('TIMBER!', 'air', 0.8);
+    this.stunts.add(pl, 'TIMBER', 80);
   }
 
   emitEffects(car, v, skids) {
@@ -754,10 +765,12 @@ export class Game {
     const won = { finish: true, par: time <= par, coins: this.coinField.coins.length > 0 && this.coins === this.coinField.coins.length };
     const had = stars.get(this.code) || {};
     const fresh = Object.keys(won).filter((k) => won[k] && !had[k]);
-    stars.put(this.code, { finish: true, par: had.par || won.par, coins: had.coins || won.coins });
+    const score = this.stunts.total(this);
+    stars.put(this.code, { finish: true, par: had.par || won.par, coins: had.coins || won.coins, bestScore: Math.max(had.bestScore || 0, score) });
     this.hud.finish({
       time, prevBest, isBest, crashes: this.crashes, track: this.track.name, lapTimes: this.lapTimes, place,
       standings: place ? this.standings() : null,
+      score, prevScore: had.bestScore || 0,
       stars: won, freshStars: fresh, allStars: stars.get(this.code), par, coins: this.coins, coinTotal: this.coinField.coins.length,
     });
   }
@@ -908,6 +921,8 @@ export class Game {
         field: all.length,
         item: this.mode === 'race' ? this.items.view(pl) : '',
         missing: this.missingTiles(pl),
+        score: pl.combo ? this.stunts.total(pl) : 0,
+        combo: pl.combo?.pts ? `+${pl.combo.pts} ×${Math.max(1, pl.combo.mult - 1)}` : '',
         coins: this.coinField.coins.length ? `${pl.coins || 0}/${this.coinField.coins.length}` : '',
       });
     });

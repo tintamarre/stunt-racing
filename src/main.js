@@ -237,6 +237,7 @@ async function boot() {
       parts.push(`Laps ${r.lapTimes.map((t) => (t === best ? `${fmtTime(t)} ★` : fmtTime(t))).join(' · ')}`);
     }
     parts.push(r.crashes ? `${r.crashes} crash${r.crashes > 1 ? 'es' : ''}` : 'Clean run!');
+    if (r.score) parts.push(`Stunt score ${r.score.toLocaleString('en')}${r.score > r.prevScore ? ' (best!)' : ''}`);
     $('finDetail').textContent = parts.join(' · ') + (r.standings ? '\n\n' + standingsText(r.standings) : '');
     hud.setTrack(game.built, game.record);
     setTimeout(() => {

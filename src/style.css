@@ -1011,3 +1011,53 @@ body.split .hud-tc {
     transform: scale(1) rotate(0);
   }
 }
+.hud-score {
+  margin-top: 4px;
+  font-family: var(--display);
+  font-size: 20px;
+  color: #fff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+}
+.hud-trick {
+  position: absolute;
+  left: 50%;
+  bottom: 24%;
+  transform: translateX(-50%);
+  font-family: var(--display);
+  font-style: italic;
+  font-size: clamp(20px, 3vw, 32px);
+  color: #ffe36b;
+  text-shadow: 0 3px 14px rgba(0, 0, 0, 0.6);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+}
+.hud-trick.show {
+  animation: trickup 1.3s ease-out forwards;
+}
+.hud-trick.big {
+  color: #4dffa6;
+  font-size: clamp(26px, 4vw, 44px);
+}
+.hud-trick.lost {
+  color: #ff6b5a;
+}
+@keyframes trickup {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 20px) scale(0.7);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.08);
+  }
+  75% {
+    opacity: 1;
+    transform: translate(-50%, -14px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -30px) scale(1);
+  }
+}

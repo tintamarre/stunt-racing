@@ -21,6 +21,8 @@ export class Hud {
       pos: $('hudPos'),
       item: $('hudItem'),
       coins: $('hudCoins'),
+      score: $('hudScore'),
+      trick: $('hudTrick'),
       prog: $('hudProg'),
       progTxt: $('hudProgTxt'),
       speed: $('hudSpeed'),
@@ -92,6 +94,7 @@ export class Hud {
     set('cam', e.cam, s.cam);
     set('prog', e.progTxt, `${s.visited}/${s.total}`);
     set('lap', e.lap, s.laps > 1 ? `LAP ${Math.min(s.lap, s.laps)}/${s.laps}` : '');
+    if (e.score) set('score', e.score, s.score || s.combo ? `★ ${s.score.toLocaleString('en')}${s.combo ? `  ${s.combo}` : ''}` : '');
     if (e.coins) set('coins', e.coins, s.coins ? `🪙 ${s.coins}` : '');
     if (e.item) {
       set('item', e.item, s.item || '');
@@ -143,6 +146,16 @@ export class Hud {
     m.textContent = text;
     m.className = `msg show ${cls}`;
     m.style.animationDuration = `${dur}s`;
+  }
+
+  // Small trick popup ("FLIP +600 ×2"), separate from the big messages
+  trick(text, cls = '') {
+    const t = this.el.trick;
+    if (!t) return;
+    t.className = 'hud-trick';
+    void t.offsetWidth;
+    t.textContent = text;
+    t.className = `hud-trick show ${cls}`;
   }
 
   finish(result) {
