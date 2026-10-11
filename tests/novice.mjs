@@ -16,7 +16,7 @@ for (const track of BUILTIN) {
     const phys = new Physics(built);
     const s = built.path.cells[0];
     const xf = cellTransform(s.c, s.r, s.rot);
-    const car = new Car(phys, spec, xf.point(new Vector3(-8, 1.2, 0)), xf.q, { arcade });
+    const car = new Car(phys, spec, xf.point(new Vector3(-8, 1.2, 0)), xf.q, { arcade, grip: +(process.env.GRIP || 1) });
     const ap = new Autopilot(built.path);
     const cellIdx = new Map(built.path.cells.flatMap((c, i) => c.covers.map((k) => [k, i])));
     const visited = new Set();

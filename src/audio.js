@@ -67,6 +67,18 @@ export class Audio {
     };
     this.screech = mk('bandpass', 1400, 6);
     this.wind = mk('lowpass', 500, 0.5);
+    // Weather beds: rain hiss and a muffled snowy wind
+    this.rain = mk('highpass', 1800, 0.4);
+    this.snowWind = mk('lowpass', 260, 0.8);
+    this.setWeather(this.weather || 'clear');
+  }
+
+  setWeather(kind) {
+    this.weather = kind;
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.rain.g.gain.setTargetAtTime(kind === 'rain' ? 0.07 : 0, t, 0.5);
+    this.snowWind.g.gain.setTargetAtTime(kind === 'snow' ? 0.12 : 0, t, 0.5);
   }
 
   setMuted(m) {
