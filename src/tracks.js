@@ -4,12 +4,24 @@ import { emptyTrack, GRID, TYPE_INDEX, DIRS, HEADING_ROT, rotEdge, localToGrid }
 const RIGHT = { E: 'S', S: 'W', W: 'N', N: 'E' };
 const LEFT = { E: 'N', N: 'W', W: 'S', S: 'E' };
 const OPP = { E: 'W', W: 'E', N: 'S', S: 'N' };
+// + / - climb / descend one elevation level over a tile
 const TOKENS = { F: 'start', S: 'straight', B: 'boost', H: 'hump', K: 'ramp', J: 'jump', O: 'loop', X: 'bridge', U: 'tunnel' };
 
 export function fromPath(name, c, r, heading, path, scenery = []) {
   const track = emptyTrack(name);
+  let level = 0;
   for (const tok of path.trim().split(/\s+/)) {
     const cell = track.cells[r * GRID + c];
+    if (tok === '+' || tok === '-') {
+      // The slope piece rises towards its local +x: point it back when going down
+      if (tok === '-') level--;
+      Object.assign(cell, { t: TYPE_INDEX.slope, r: HEADING_ROT[tok === '+' ? heading : OPP[heading]], h: level });
+      if (tok === '+') level++;
+      c += DIRS[heading][0];
+      r += DIRS[heading][1];
+      continue;
+    }
+    cell.h = level;
     if (/^[WC][RL]$/.test(tok)) {
       // Wide (2x2, W) or sweeping (3x3, C) curve. A left turn is the right-hand piece driven backwards.
       const right = tok[1] === 'R';
@@ -18,7 +30,7 @@ export function fromPath(name, c, r, heading, path, scenery = []) {
       const rot = HEADING_ROT[d];
       const [dc, dr] = localToGrid(rot, n, n);
       const [ac, ar] = right ? [c, r] : [c - dc, r - dr];
-      track.cells[ar * GRID + ac] = { t: TYPE_INDEX[n === 1 ? 'wide' : 'sweep'], r: rot };
+      track.cells[ar * GRID + ac] = { t: TYPE_INDEX[n === 1 ? 'wide' : 'sweep'], r: rot, h: level };
       [c, r] = right ? [ac + dc, ar + dr] : [ac, ar];
       heading = right ? RIGHT[heading] : OPP[d];
       c += DIRS[heading][0];
@@ -125,6 +137,25 @@ export const BUILTIN = [
      S S H S S B S S L`,
     [...forest([[3, 5], [4, 6], [5, 5], [8, 5], [9, 6], [3, 9], [4, 10], [9, 11], [10, 12], [13, 5], [13, 12], [14, 14]]), ...houses([[5, 8], [9, 10], [13, 2], [3, 14]])],
   ),
+  // Mountain tracks: climbs and descents between elevation levels (+ / -)
+  fromPath(
+    'Alpine Climb',
+    4, 2, 'E',
+    `F S B + + S S WR
+     + S U S WR
+     S - S - S K S WR
+     - S S S WR`,
+    [...forest([[5, 4], [6, 5], [9, 6], [10, 4], [7, 7], [14, 12], [1, 12], [8, 12]]), ...houses([[6, 6], [13, 1]])],
+  ),
+  fromPath(
+    'Summit Rush',
+    4, 13, 'E',
+    `F S B + + + S WL
+     + + S L
+     S J S S - - S WL
+     - - - L`,
+    [...forest([[6, 10], [7, 11], [9, 10], [5, 6], [8, 5], [11, 6], [14, 9], [1, 9]]), ...houses([[8, 11], [12, 5]])],
+  ),
   fromPath(
     'Mountain Pass',
     3, 2, 'E',
@@ -148,5 +179,5 @@ export const BUILTIN = [
   ),
 ];
 
-const LEVELS = { 'Easy Oval': 'Easy', 'Green Valley': 'Easy', 'Speed Bowl': 'Easy', 'River Run': 'Medium', 'Grand Prix': 'Medium', 'Sunday Drive': 'Medium', 'Stunt Park': 'Medium', 'Mountain Pass': 'Hard', 'Mad Loops': 'Hard' };
+const LEVELS = { 'Easy Oval': 'Easy', 'Green Valley': 'Easy', 'Speed Bowl': 'Easy', 'River Run': 'Medium', 'Grand Prix': 'Medium', 'Alpine Climb': 'Medium', 'Summit Rush': 'Hard', 'Sunday Drive': 'Medium', 'Stunt Park': 'Medium', 'Mountain Pass': 'Hard', 'Mad Loops': 'Hard' };
 BUILTIN.forEach((t) => (t.level = LEVELS[t.name]));

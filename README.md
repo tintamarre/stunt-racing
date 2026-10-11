@@ -9,10 +9,10 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 - Real-time vehicle physics (Rapier raycast vehicle) with air control and a loop assist.
 - Two driving modes: **Arcade** (default, kart-style: turns can be taken flat out, hold the drift button for a mini-turbo) and **Classic** (realistic grip, handbrake).
 - Optional *Auto return to track*: puts the car back on the road after a moment on the grass (off by default).
-- Six cars (three of them silly), nine built-in tracks (three easy ones for beginners) with wide (2×2) and sweeping (3×3) curves, bridges over streams and solid tunnels you can also drive over, day / sunset / night lighting.
+- Six cars (three of them silly), eleven built-in tracks (three easy ones for beginners, two in the mountains with climbs and descents) with wide (2×2) and sweeping (3×3) curves, bridges over streams and solid tunnels you can also drive over, day / sunset / night lighting.
 - 1 to 5 lap races, with lap times and a best time per lap count.
 - Trees hit above ~20 km/h snap and let the car through, at the cost of some speed. Scraping a wall at a shallow angle slides the car along it; only a big wall hit head-on stops it.
-- Track editor: paint tiles (including 2×2 wide curves, 3×3 sweeping curves, bridges and tunnels) on a 16×16 board, test-drive instantly, save locally or copy a share link (the whole track is encoded in the URL).
+- Track editor: paint tiles (including 2×2 wide curves, 3×3 sweeping curves, slopes and elevation levels, bridges and tunnels) on a 16×16 board, test-drive instantly, save locally or copy a share link (the whole track is encoded in the URL).
 - Best-lap ghost per track, full replay with TV / chase / heli / cinematic cameras.
 - Keyboard, gamepad and touch controls.
 
@@ -52,7 +52,8 @@ Vanilla JavaScript + [Vite](https://vite.dev), [three.js](https://threejs.org) f
 
 | File | Role |
 | --- | --- |
-| `src/track.js` | Tile model, piece geometry (ribbons), path tracing, track encoding |
+| `src/track.js` | Tile model, piece geometry (ribbons), path tracing, track encoding, mountain relief |
+| `src/terrain.js` | Terrain height (landscape plus the current track's relief) |
 | `src/tracks.js` | Built-in tracks, described as drive-through paths |
 | `src/physics.js` | Rapier world, terrain collider, car controller |
 | `src/world.js` | Renderer, sky, lighting, terrain, track meshes, scenery |

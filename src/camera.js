@@ -102,6 +102,10 @@ export class CameraRig {
       k = 1 - Math.exp(-dt * 4);
     }
 
+    // Never below the ground (TV posts and the orbit included, which matters on mountain tracks)
+    if (this.ground && !target.inLoop && mode !== 'Bumper') {
+      desired.y = Math.max(desired.y, this.ground(desired.x, desired.z) + (mode === 'TV' ? 4 : 0.8));
+    }
     if (this.snap) {
       k = 1;
       this.snap = false;

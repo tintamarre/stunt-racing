@@ -13,6 +13,7 @@ export const TYPE_COLORS = {
   boost: '#39e0ff',
   wide: '#c9d1dc',
   sweep: '#c9d1dc',
+  slope: '#9be37a',
   bridge: '#b9a98a',
   tunnel: '#7a9a52',
   trees: '#3f8a3a',
@@ -101,6 +102,20 @@ export function drawPiece(ctx, type, r, x0, y0, s, { detail = true } = {}) {
     ctx.beginPath();
     ctx.arc(c[0], c[1], s * 0.12, 0, 7);
     ctx.fill();
+  } else if (type === 'slope') {
+    // Chevrons pointing uphill
+    ctx.strokeStyle = '#9be37a';
+    ctx.lineWidth = Math.max(1.5, s * 0.06);
+    for (const x of [-8, 0, 8]) {
+      const [ax, ay] = map(x + 3, 0);
+      const [bx, by] = map(x - 2, -4);
+      const [cx, cy] = map(x - 2, 4);
+      ctx.beginPath();
+      ctx.moveTo(bx, by);
+      ctx.lineTo(ax, ay);
+      ctx.lineTo(cx, cy);
+      ctx.stroke();
+    }
   } else if (type === 'bridge') {
     // Stream across the road
     const [a1, b1] = map(-5, -14);

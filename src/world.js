@@ -8,7 +8,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { makeTextures } from './textures.js';
-import { terrainHeight, fbm, outside, CENTER, TERRAIN_SIZE, FIELD } from './terrain.js';
+import { terrainHeight, setRelief, fbm, outside, CENTER, TERRAIN_SIZE, FIELD } from './terrain.js';
 import { T, LOOP_R, ROAD_W, TUNNEL_HW, TUNNEL_WALL, tunnelGeometry } from './track.js';
 
 export const PRESETS = {
@@ -259,7 +259,10 @@ export class World {
     }
     g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     g.computeVertexNormals();
+    this.terrainGeo = g;
+    this.terrainY = Float32Array.from({ length: pos.count }, (_, i) => pos.getY(i));
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, map: this.tex.grass, roughness: 1, metalness: 0 });
+    this.terrainMat = mat;
     const terrain = new THREE.Mesh(g, mat);
     terrain.receiveShadow = true;
     this.scene.add(terrain);
@@ -297,6 +300,8 @@ export class World {
     }
     const group = new THREE.Group();
     this.trackGroup = group;
+    setRelief(built.relief);
+    this.buildRelief(built.relief, group);
     this.animated = [];
     this.nightMaterials = [];
     const tx = this.tex;
@@ -494,6 +499,61 @@ export class World {
     }
   }
 
+  // Mountain tracks: a fine terrain mesh over the playfield, while the coarse landscape
+  // under it is pushed down out of sight.
+  buildRelief(rel, group) {
+    const pos = this.terrainGeo.attributes.position;
+    const lim = rel ? [rel.x0 + 2, rel.x0 + (rel.n - 1) * rel.step - 2] : null;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const z = pos.getZ(i);
+      const inside = lim && x > lim[0] && z > lim[0] && x < lim[1] && z < lim[1];
+      pos.setY(i, inside ? -40 : this.terrainY[i]);
+    }
+    pos.needsUpdate = true;
+    this.terrainGeo.computeVertexNormals();
+    if (!rel) return;
+    const { x0, step, n, h } = rel;
+    const span = (n - 1) * step;
+    const g = new THREE.PlaneGeometry(span, span, n - 1, n - 1);
+    g.rotateX(-Math.PI / 2);
+    g.translate(x0 + span / 2, 0, x0 + span / 2);
+    const p = g.attributes.position;
+    const colors = new Float32Array(p.count * 3);
+    const c = new THREE.Color();
+    const grassA = new THREE.Color(0x4d7a2a);
+    const grassB = new THREE.Color(0x6e9a36);
+    const rock = new THREE.Color(0x857c70);
+    const dirt = new THREE.Color(0x8a7a55);
+    const snow = new THREE.Color(0xf2f4f7);
+    const at = (i, j) => h[Math.min(n - 1, Math.max(0, j)) * n + Math.min(n - 1, Math.max(0, i))];
+    for (let k = 0; k < p.count; k++) {
+      const x = p.getX(k);
+      const z = p.getZ(k);
+      const gi = Math.round((x - x0) / step);
+      const gj = Math.round((z - x0) / step);
+      const y = at(gi, gj);
+      p.setY(k, y);
+      const slope = Math.hypot(at(gi + 1, gj) - at(gi - 1, gj), at(gi, gj + 1) - at(gi, gj - 1)) / (2 * step);
+      c.copy(grassA).lerp(grassB, fbm(x * 0.02, z * 0.02, 3));
+      c.lerp(dirt, Math.min(1, Math.max(0, (slope - 0.35) * 2.5)));
+      c.lerp(rock, Math.min(1, Math.max(0, (slope - 0.6) * 2.5)));
+      if (y > 26) c.lerp(rock, Math.min(1, (y - 26) / 8));
+      if (y > 34) c.lerp(snow, Math.min(1, (y - 34) / 8));
+      colors[k * 3] = c.r;
+      colors[k * 3 + 1] = c.g;
+      colors[k * 3 + 2] = c.b;
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    g.computeVertexNormals();
+    const grass = this.tex.grass.clone();
+    grass.needsUpdate = true;
+    grass.repeat.set(span / 6, span / 6);
+    const mesh = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, map: grass, roughness: 1, metalness: 0 }));
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  }
+
   // Streams under the bridges: sandy banks and water, slightly above the grass.
   buildWater(water, group) {
     if (!water.length) return;
@@ -505,7 +565,7 @@ export class World {
         const geo = new THREE.PlaneGeometry(width, w.len);
         geo.rotateX(-Math.PI / 2);
         const m = new THREE.Mesh(geo, mat);
-        m.position.copy(w.pos).setY(y);
+        m.position.copy(w.pos).setY(w.pos.y + y);
         m.quaternion.copy(w.q);
         m.receiveShadow = true;
         group.add(m);
@@ -517,9 +577,13 @@ export class World {
   buildDelineators(path, group, glow) {
     const spots = [];
     path.points.forEach((p, i) => {
-      if (i % 4 || p.p.y > 0.3 || p.up.y < 0.97 || p.type === 'loop' || p.type === 'tunnel' || p.type === 'bridge') return;
+      if (i % 4 || p.p.y - p.ground > 0.3 || p.up.y < 0.97 || p.type === 'loop' || p.type === 'tunnel' || p.type === 'bridge') return;
       const side = new THREE.Vector3().crossVectors(p.f, p.up).normalize();
-      for (const s of [-1, 1]) spots.push({ pos: p.p.clone().addScaledVector(side, s * (ROAD_W / 2 + 1.6)), s });
+      for (const s of [-1, 1]) {
+        const pos = p.p.clone().addScaledVector(side, s * (ROAD_W / 2 + 1.6));
+        pos.y = terrainHeight(pos.x, pos.z);
+        spots.push({ pos, s });
+      }
     });
     const postG = new THREE.BoxGeometry(0.12, 0.9, 0.12);
     postG.translate(0, 0.45, 0);
@@ -529,7 +593,7 @@ export class World {
     const refs = new THREE.InstancedMesh(refG, glow(0xffa21a, 0.3, 5), spots.length);
     const m = new THREE.Matrix4();
     spots.forEach((sp, i) => {
-      m.makeTranslation(sp.pos.x, 0, sp.pos.z);
+      m.makeTranslation(sp.pos.x, sp.pos.y, sp.pos.z);
       posts.setMatrixAt(i, m);
       refs.setMatrixAt(i, m);
     });
@@ -594,7 +658,7 @@ export class World {
     this.nightMaterials.push(winMat);
     for (const h of houses) {
       const g = new THREE.Group();
-      g.position.set(h.x, 0, h.z);
+      g.position.set(h.x, terrainHeight(h.x, h.z), h.z);
       g.rotation.y = h.rot;
       const wall = new THREE.MeshStandardMaterial({ color: wallCols[Math.floor(h.k * 4)], roughness: 0.9 });
       const body = new THREE.Mesh(new THREE.BoxGeometry(10, 5, 8), wall);

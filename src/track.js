@@ -1,6 +1,7 @@
 // Track model: a GRID x GRID board of tiles, each holding a piece type and a rotation.
 // This module is pure data + geometry (no rendering), so it also runs in Node for tests.
 import { Vector3, Quaternion, Shape, Path, ExtrudeGeometry } from 'three';
+import { fbm } from './noise.js';
 
 export const T = 30; // tile size (m)
 export const GRID = 16;
@@ -24,28 +25,51 @@ export const TYPES = [
   { id: 'bridge', label: 'Bridge', road: true },
   { id: 'tunnel', label: 'Tunnel', road: true },
   { id: 'sweep', label: 'Sweeping curve', road: true },
+  { id: 'slope', label: 'Slope', road: true },
 ];
+export const LEVEL_H = 4; // height of one elevation level (m)
+export const MAX_LEVEL = 7;
 export const TYPE_INDEX = Object.fromEntries(TYPES.map((t, i) => [t.id, i]));
 
 const ALPH = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 
 export function emptyTrack(name = 'Untitled') {
-  return { name, cells: Array.from({ length: GRID * GRID }, () => ({ t: 0, r: 0 })) };
+  return { name, cells: Array.from({ length: GRID * GRID }, () => ({ t: 0, r: 0, h: 0 })) };
 }
 
+// Version 1: one char per cell (16 types, no elevation) — kept for flat tracks so their
+// codes (and the records keyed by them) don't change. Version 2: two chars per cell,
+// bits t(6) h(3) r(2).
 export function encodeTrack(track) {
-  return '1' + track.cells.map((c) => ALPH[c.t * 4 + c.r]).join('');
+  if (track.cells.every((c) => !c.h && c.t < 16)) return '1' + track.cells.map((c) => ALPH[c.t * 4 + c.r]).join('');
+  return '2' + track.cells.map((c) => {
+    const v = (c.t << 5) | ((c.h || 0) << 2) | c.r;
+    return ALPH[v >> 6] + ALPH[v & 63];
+  }).join('');
 }
 
 export function decodeTrack(code, name = 'Shared track') {
-  if (!code || code[0] !== '1' || code.length !== GRID * GRID + 1) return null;
   const track = emptyTrack(name);
-  for (let i = 0; i < GRID * GRID; i++) {
-    const v = ALPH.indexOf(code[i + 1]);
-    if (v < 0 || v >> 2 >= TYPES.length) return null;
-    track.cells[i] = { t: v >> 2, r: v & 3 };
+  if (code?.[0] === '1' && code.length === GRID * GRID + 1) {
+    for (let i = 0; i < GRID * GRID; i++) {
+      const v = ALPH.indexOf(code[i + 1]);
+      if (v < 0 || v >> 2 >= TYPES.length) return null;
+      track.cells[i] = { t: v >> 2, r: v & 3, h: 0 };
+    }
+    return track;
   }
-  return track;
+  if (code?.[0] === '2' && code.length === GRID * GRID * 2 + 1) {
+    for (let i = 0; i < GRID * GRID; i++) {
+      const a = ALPH.indexOf(code[1 + i * 2]);
+      const b = ALPH.indexOf(code[2 + i * 2]);
+      if (a < 0 || b < 0) return null;
+      const v = (a << 6) | b;
+      if (v >> 5 >= TYPES.length) return null;
+      track.cells[i] = { t: v >> 5, r: v & 3, h: (v >> 2) & 7 };
+    }
+    return track;
+  }
+  return null;
 }
 
 export const cellAt = (track, c, r) =>
@@ -131,6 +155,9 @@ const sweepS = (u) => {
   const a = (u * Math.PI) / 2;
   return { p: v3(-H + SWEEP_R * Math.sin(a), 0, H + 2 * T - SWEEP_R * Math.cos(a)) };
 };
+
+// Slope: climbs one elevation level along the tile (flat at both ends)
+const slopeS = (u) => ({ p: v3(-H + u * T, LEVEL_H * smooth(u), 0) });
 
 // Humpback bridge over a stream
 export const BRIDGE_H = 2.2;
@@ -234,6 +261,7 @@ export const PIECES = {
     ribbons: [{ s: sweepS, len: (Math.PI * SWEEP_R) / 2, curbs: true }],
     center: sweepS,
   },
+  slope: { conn: ['W', 'E'], rise: 1, ribbons: [{ s: slopeS, len: T }], center: slopeS },
   bridge: { conn: ['W', 'E'], ribbons: [{ s: bridgeS, len: T + 1, rails: true, deck: true }], center: bridgeS },
   tunnel: { conn: ['W', 'E'], ribbons: [{ s: straightS, len: T }], center: straightS },
 };
@@ -261,9 +289,11 @@ export function occupancy(track) {
       type,
       piece,
       rot: cell.r,
+      h: cell.h || 0,
+      // [col, row, edge, level] of each connector
       ends: [
-        [c, r, rotEdge(piece.conn[0], cell.r)],
-        [ec, er, rotEdge(piece.conn[1], cell.r)],
+        [c, r, rotEdge(piece.conn[0], cell.r), cell.h || 0],
+        [ec, er, rotEdge(piece.conn[1], cell.r), (cell.h || 0) + (piece.rise || 0)],
       ],
       covers: covers.map(([cc, rr]) => rr * GRID + cc),
     };
@@ -285,9 +315,9 @@ function frameOf(sampler, u) {
   return { p: a.p, f, up, right };
 }
 
-export function cellTransform(c, r, rot) {
+export function cellTransform(c, r, rot, h = 0) {
   const q = new Quaternion().setFromAxisAngle(v3(0, 1, 0), (rot * Math.PI) / 2);
-  const o = v3(c * T + H, 0, r * T + H);
+  const o = v3(c * T + H, h * LEVEL_H, r * T + H);
   return {
     q,
     o,
@@ -315,9 +345,10 @@ export function tracePath(track) {
   let r = Math.floor(start / GRID);
   const sc = track.cells[start];
   let out = rotEdge('E', sc.r);
-  cells.push({ c, r, idx: start, forward: true, type: TYPES[sc.t].id, rot: sc.r, covers: [start] });
+  cells.push({ c, r, idx: start, forward: true, type: TYPES[sc.t].id, rot: sc.r, h: sc.h || 0, covers: [start] });
   const seen = new Set([start]);
   let closed = false;
+  let level = sc.h || 0;
   for (;;) {
     const nc = c + DIRS[out][0];
     const nr = r + DIRS[out][1];
@@ -327,8 +358,9 @@ export function tracePath(track) {
     const entry = OPP[out];
     const [e0, e1] = o.ends;
     let forward;
-    if (e0[0] === nc && e0[1] === nr && e0[2] === entry) forward = true;
-    else if (e1[0] === nc && e1[1] === nr && e1[2] === entry) forward = false;
+    // Connectors must also meet at the same elevation
+    if (e0[0] === nc && e0[1] === nr && e0[2] === entry && e0[3] === level) forward = true;
+    else if (e1[0] === nc && e1[1] === nr && e1[2] === entry && e1[3] === level) forward = false;
     else break;
     const idx = o.anchor;
     if (idx === start) {
@@ -337,9 +369,10 @@ export function tracePath(track) {
     }
     if (seen.has(idx)) break;
     seen.add(idx);
-    cells.push({ c: o.c, r: o.r, idx, forward, type: o.type, rot: o.rot, covers: o.covers });
+    cells.push({ c: o.c, r: o.r, idx, forward, type: o.type, rot: o.rot, h: o.h, covers: o.covers });
     const ex = forward ? e1 : e0;
     out = ex[2];
+    level = ex[3];
     c = ex[0];
     r = ex[1];
   }
@@ -347,7 +380,7 @@ export function tracePath(track) {
   const points = [];
   cells.forEach((pc, ci) => {
     const piece = PIECES[pc.type];
-    const xf = cellTransform(pc.c, pc.r, pc.rot);
+    const xf = cellTransform(pc.c, pc.r, pc.rot, pc.h);
     const len = piece.ribbons.reduce((a, rb) => a + rb.len, 0) + (pc.type === 'jump' ? JUMP_GAP * 2 : 0);
     const n = Math.max(6, Math.ceil(len / 2));
     for (let i = 0; i < n; i++) {
@@ -355,7 +388,9 @@ export function tracePath(track) {
       const u = pc.forward ? t : 1 - t;
       const fr = worldFrame(piece.center, u, xf);
       if (!pc.forward) fr.f.negate();
-      points.push({ p: fr.p, f: fr.f, up: fr.up, cell: ci, type: pc.type, u: t });
+      // ground: the level the terrain sits at under this point (the road itself on slopes)
+      const ground = pc.type === 'slope' ? fr.p.y : xf.o.y;
+      points.push({ p: fr.p, f: fr.f, up: fr.up, cell: ci, type: pc.type, u: t, ground });
     }
   });
   return { cells, points, closed };
@@ -433,18 +468,20 @@ export function buildTrack(track) {
       const [dc, dr] = localToGrid(cell.r, 0, k);
       wet.add((r + dr) * GRID + c + dc);
     }
-    const xf = cellTransform(c, r, cell.r);
+    const xf = cellTransform(c, r, cell.r, cell.h);
     water.push({ pos: xf.point(v3(0, 0, ((hi - lo) * T) / 2)), q: xf.q, len: (lo + hi + 1) * T - 4 });
   });
 
   const edge = (fr, off, lift = 0) => fr.p.clone().addScaledVector(fr.right, off).addScaledVector(fr.up, lift);
-  const ground = (p) => v3(p.x, -0.4, p.z);
+  let base = 0; // elevation of the cell being built
+  const ground = (p) => v3(p.x, base - 0.4, p.z);
 
   for (let r = 0; r < GRID; r++) {
     for (let c = 0; c < GRID; c++) {
       const cell = track.cells[r * GRID + c];
       const type = TYPES[cell.t].id;
-      const xf = cellTransform(c, r, cell.r);
+      const xf = cellTransform(c, r, cell.r, cell.h);
+      base = xf.o.y;
       const piece = PIECES[type];
       const under = occ.get(r * GRID + c);
       if (under && under.anchor !== r * GRID + c) continue; // covered by a multi-cell piece
@@ -499,7 +536,7 @@ export function buildTrack(track) {
               for (const s of [-1, 1]) {
                 const ea = edge(A, s * ext, 0);
                 const eb = edge(B, s * ext, 0);
-                if (ea.y < 0.08 && eb.y < 0.08) continue;
+                if (ea.y < base + 0.08 && eb.y < base + 0.08) continue;
                 const sq = s > 0 ? [ea, ground(ea), ground(eb), eb] : [eb, ground(eb), ground(ea), ea];
                 mat.quad(...sq, [d0 / 4, ea.y / 4, d0 / 4, 0, dist / 4, 0, dist / 4, eb.y / 4]);
                 col.quad(...sq);
@@ -510,7 +547,7 @@ export function buildTrack(track) {
             for (const [fr, s] of [[frames[0], -1], [frames[n], 1]]) {
               const l = edge(fr, -ext, 0);
               const rr = edge(fr, ext, 0);
-              if (l.y < 0.08 && rr.y < 0.08) continue;
+              if (l.y < base + 0.08 && rr.y < base + 0.08) continue;
               const cq = s > 0 ? [l, rr, ground(rr), ground(l)] : [rr, l, ground(l), ground(rr)];
               S.concrete.quad(...cq, [0, l.y / 4, 1, rr.y / 4, 1, 0, 0, 0]);
               col.quad(...cq);
@@ -563,5 +600,76 @@ export function buildTrack(track) {
   }
   // Keep trees off houses
   const treesFiltered = trees.filter((t) => !houses.some((h) => Math.hypot(t.x - h.x, t.z - h.z) < 8));
-  return { surfaces: S, collision: col, props, trees: treesFiltered, houses, boostZones, loops, blocks, water, path: tracePath(track) };
+  const path = tracePath(track);
+  const relief = track.cells.some((c) => c.h > 0 && TYPES[c.t].road) ? computeRelief(path, water) : null;
+  return { surfaces: S, collision: col, props, trees: treesFiltered, houses, boostZones, loops, blocks, water, path, relief };
+}
+
+// ---------------------------------------------------------------------------
+// Mountain relief for tracks with elevation: the ground hugs the road (slightly below it),
+// then turns into hills and valleys around the local road level further away, and fades
+// back to the flat border at the edge of the playfield.
+export const RELIEF_MARGIN = 45;
+export function computeRelief(path, water = []) {
+  const step = 2.5;
+  const x0 = -RELIEF_MARGIN;
+  const size = GRID * T + 2 * RELIEF_MARGIN;
+  const n = Math.round(size / step) + 1;
+  const pts = path ? path.points.map((p) => [p.p.x, p.p.z, p.ground]) : [];
+  for (const w of water) {
+    const along = new Vector3(0, 0, 1).applyQuaternion(w.q);
+    for (let k = -w.len / 2; k <= w.len / 2; k += 3) pts.push([w.pos.x + along.x * k, w.pos.z + along.z * k, w.pos.y]);
+  }
+  const B = 30;
+  const buckets = new Map();
+  for (const p of pts) {
+    const key = Math.floor(p[0] / B) * 1000 + Math.floor(p[1] / B);
+    if (!buckets.has(key)) buckets.set(key, []);
+    buckets.get(key).push(p);
+  }
+  const near0 = ROAD_W / 2 + 2;
+  const near1 = ROAD_W / 2 + 16;
+  const h = new Float32Array(n * n);
+  for (let j = 0; j < n; j++) {
+    for (let i = 0; i < n; i++) {
+      const x = x0 + i * step;
+      const z = x0 + j * step;
+      const bx = Math.floor(x / B);
+      const bz = Math.floor(z / B);
+      let dmin = Infinity;
+      let gmin = 0;
+      let wsum = 0;
+      let gsum = 0;
+      for (let a = -3; a <= 3; a++) {
+        for (let b = -3; b <= 3; b++) {
+          const list = buckets.get((bx + a) * 1000 + bz + b);
+          if (!list) continue;
+          for (const [px, pz, g] of list) {
+            const d2 = (px - x) ** 2 + (pz - z) ** 2;
+            if (d2 < dmin) {
+              dmin = d2;
+              gmin = g;
+            }
+            const w = 1 / (d2 + 400);
+            wsum += w;
+            gsum += w * g;
+          }
+        }
+      }
+      const d = Math.sqrt(dmin);
+      const avg = wsum ? gsum / wsum : 0;
+      const t = Math.min(1, Math.max(0, (d - near0) / (near1 - near0)));
+      const k = t * t * (3 - 2 * t);
+      // Mostly peaks rising above the road, with the odd valley below it
+      const amp = Math.min(1, Math.max(0, (d - 8) / 45)) * 38;
+      const nat = avg + amp * (fbm(x * 0.011 + 31, z * 0.011 + 17) - 0.38) * 2.2;
+      let y = gmin - 0.12 + (nat - gmin + 0.12) * k;
+      // Fade to the flat border
+      const e = Math.min(i, j, n - 1 - i, n - 1 - j) * step;
+      const f = Math.min(1, e / 50);
+      y *= f * f * (3 - 2 * f);
+      h[j * n + i] = y;
+    }
+  }
+  return { x0, step, n, h };
 }

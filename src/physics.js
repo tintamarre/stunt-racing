@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 import { Vector3, Quaternion } from 'three';
 import { T, GRID } from './track.js';
-import { terrainHeight, CENTER, TERRAIN_SIZE, TERRAIN_SEGS } from './terrain.js';
+import { terrainHeight, setRelief, CENTER, TERRAIN_SIZE, TERRAIN_SEGS } from './terrain.js';
 
 export { RAPIER };
 export const initPhysics = () => RAPIER.init();
@@ -36,9 +36,13 @@ export class Physics {
     this.world.timestep = DT;
     const w = this.world;
 
-    // Terrain trimesh
+    // Terrain trimesh: the whole landscape at 10 m, plus the track's relief (mountain tracks)
+    // at 2.5 m over the playfield, where the coarse quads are left out.
+    setRelief(built.relief);
+    const rel = built.relief;
     const n = TERRAIN_SEGS;
-    const verts = new Float32Array((n + 1) * (n + 1) * 3);
+    const rn = rel ? rel.n : 0;
+    const verts = new Float32Array(((n + 1) * (n + 1) + rn * rn) * 3);
     let k = 0;
     for (let j = 0; j <= n; j++) {
       for (let i = 0; i <= n; i++) {
@@ -49,16 +53,32 @@ export class Physics {
         verts[k++] = z;
       }
     }
-    const tidx = new Uint32Array(n * n * 6);
-    k = 0;
+    const inRelief = (x, z) => rel && x >= rel.x0 && z >= rel.x0 && x <= rel.x0 + (rel.n - 1) * rel.step && z <= rel.x0 + (rel.n - 1) * rel.step;
+    const idx = [];
     for (let j = 0; j < n; j++) {
       for (let i = 0; i < n; i++) {
         const a = j * (n + 1) + i;
-        tidx.set([a, a + n + 1, a + 1, a + 1, a + n + 1, a + n + 2], k);
-        k += 6;
+        if (inRelief(verts[a * 3], verts[a * 3 + 2]) && inRelief(verts[(a + n + 2) * 3], verts[(a + n + 2) * 3 + 2])) continue;
+        idx.push(a, a + n + 1, a + 1, a + 1, a + n + 1, a + n + 2);
       }
     }
-    this.ground = w.createCollider(RAPIER.ColliderDesc.trimesh(verts, tidx).setFriction(0.8));
+    if (rel) {
+      const o = (n + 1) * (n + 1);
+      for (let j = 0; j < rn; j++) {
+        for (let i = 0; i < rn; i++) {
+          verts[k++] = rel.x0 + i * rel.step;
+          verts[k++] = rel.h[j * rn + i];
+          verts[k++] = rel.x0 + j * rel.step;
+        }
+      }
+      for (let j = 0; j < rn - 1; j++) {
+        for (let i = 0; i < rn - 1; i++) {
+          const a = o + j * rn + i;
+          idx.push(a, a + rn, a + 1, a + 1, a + rn, a + rn + 1);
+        }
+      }
+    }
+    this.ground = w.createCollider(RAPIER.ColliderDesc.trimesh(verts, new Uint32Array(idx)).setFriction(0.8));
     // Boundary walls
     const half = TERRAIN_SIZE / 2 - 20;
     for (const [x, z, hx, hz] of [
@@ -79,12 +99,13 @@ export class Physics {
     }
     this.trees = built.trees.map((t) => {
       const r = 0.35 * t.s + 0.15;
-      return { x: t.x, z: t.z, r, broken: false, col: w.createCollider(RAPIER.ColliderDesc.cylinder(2.5, r).setTranslation(t.x, 2.5, t.z)) };
+      const y = terrainHeight(t.x, t.z) + 2.5;
+      return { x: t.x, z: t.z, r, broken: false, col: w.createCollider(RAPIER.ColliderDesc.cylinder(2.5, r).setTranslation(t.x, y, t.z)) };
     });
     for (const h of built.houses) {
       const q = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), h.rot);
       w.createCollider(
-        RAPIER.ColliderDesc.cuboid(5, 3.2, 4).setTranslation(h.x, 3.2, h.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }),
+        RAPIER.ColliderDesc.cuboid(5, 3.2, 4).setTranslation(h.x, terrainHeight(h.x, h.z) + 3.2, h.z).setRotation({ x: q.x, y: q.y, z: q.z, w: q.w }),
       );
     }
     for (const b of built.blocks) {

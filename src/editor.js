@@ -1,5 +1,5 @@
 // Track editor: paint tiles on the board, validate the circuit, save & share.
-import { TYPES, TYPE_INDEX, GRID, PIECES, encodeTrack, decodeTrack, tracePath, occupancy, localToGrid } from './track.js';
+import { TYPES, TYPE_INDEX, GRID, PIECES, MAX_LEVEL, LEVEL_H, encodeTrack, decodeTrack, tracePath, occupancy, localToGrid } from './track.js';
 import { drawBoard, drawPiece } from './tiledraw.js';
 import { customTracks } from './storage.js';
 import { BUILTIN } from './tracks.js';
@@ -17,6 +17,7 @@ export class Editor {
     this.ctx = this.canvas.getContext('2d');
     this.tool = TYPE_INDEX.straight;
     this.rot = 0;
+    this.level = 0; // elevation given to placed tiles
     this.hover = null;
     this.buildPalette();
     this.bind();
@@ -69,6 +70,28 @@ export class Editor {
     rc.stroke();
     rb.onclick = () => this.rotate();
     pal.appendChild(rb);
+    // Elevation: tiles are placed at the current level; slopes climb one level
+    for (const [label, d] of [['Higher (+)', 1], ['Lower (−)', -1]]) {
+      const b = document.createElement('button');
+      b.innerHTML = `<canvas width="72" height="72"></canvas><span>${label}</span>`;
+      const x = b.querySelector('canvas').getContext('2d');
+      x.fillStyle = '#26324a';
+      x.fillRect(0, 0, 72, 72);
+      x.fillStyle = '#fff';
+      x.beginPath();
+      x.moveTo(36, d > 0 ? 18 : 54);
+      x.lineTo(54, d > 0 ? 50 : 22);
+      x.lineTo(18, d > 0 ? 50 : 22);
+      x.fill();
+      b.onclick = () => this.setLevel(this.level + d);
+      pal.appendChild(b);
+    }
+  }
+
+  setLevel(l) {
+    this.level = Math.max(0, Math.min(MAX_LEVEL, l));
+    this.draw();
+    this.validate();
   }
 
   setTool(i) {
@@ -108,6 +131,7 @@ export class Editor {
         if (cur.t) {
           this.setTool(cur.t);
           this.rot = cur.r;
+          this.setLevel(cur.h || 0);
         }
         return;
       }
@@ -146,6 +170,8 @@ export class Editor {
       if (this.root.classList.contains('hidden') || e.target.tagName === 'INPUT') return;
       if (e.code === 'KeyR') this.rotate();
       if (e.code === 'KeyE') this.setTool(0);
+      if (e.code === 'Equal' || e.code === 'NumpadAdd' || e.code === 'PageUp') this.setLevel(this.level + 1);
+      if (e.code === 'Minus' || e.code === 'NumpadSubtract' || e.code === 'PageDown') this.setLevel(this.level - 1);
       if (e.code === 'Escape') this.onExit();
       const n = parseInt(e.key, 10);
       if (n >= 1 && n <= 9 && TYPES[n]) this.setTool(n);
@@ -154,7 +180,7 @@ export class Editor {
 
     $('edName').addEventListener('input', (e) => (this.track.name = e.target.value || 'Untitled'));
     $('edNew').onclick = () => {
-      const t = { name: 'My track', cells: Array.from({ length: GRID * GRID }, () => ({ t: 0, r: 0 })) };
+      const t = { name: 'My track', cells: Array.from({ length: GRID * GRID }, () => ({ t: 0, r: 0, h: 0 })) };
       this.load(t);
     };
     $('edSave').onclick = () => this.save();
@@ -199,15 +225,15 @@ export class Editor {
     const keys = new Set(foot.map(([c, r]) => r * GRID + c));
     // Remove multi-cell pieces overlapping the new one, then clear the cells it covers
     for (const [k, o] of occupancy(this.track)) {
-      if (keys.has(k) && o.piece.cover && o.anchor !== i) this.track.cells[o.anchor] = { t: 0, r: 0 };
+      if (keys.has(k) && o.piece.cover && o.anchor !== i) this.track.cells[o.anchor] = { t: 0, r: 0, h: 0 };
     }
-    for (const k of keys) if (k !== i && PIECES[TYPES[this.tool].id]?.cover) this.track.cells[k] = { t: 0, r: 0 };
+    for (const k of keys) if (k !== i && PIECES[TYPES[this.tool].id]?.cover) this.track.cells[k] = { t: 0, r: 0, h: 0 };
     if (this.tool === TYPE_INDEX.start) {
       this.track.cells.forEach((c) => {
         if (c.t === TYPE_INDEX.start) c.t = 0;
       });
     }
-    this.track.cells[i] = { t: this.tool, r: this.tool ? this.rot : 0 };
+    this.track.cells[i] = { t: this.tool, r: this.tool ? this.rot : 0, h: this.tool ? this.level : 0 };
     this.changed();
   }
 
@@ -222,12 +248,12 @@ export class Editor {
     const roads = this.track.cells.filter((c) => TYPES[c.t].road).length;
     if (!p) {
       this.path = null;
-      el.innerHTML = '<b class="bad">No start tile</b> — place a Start / Finish piece.';
+      el.innerHTML = `Level <b>${this.level}</b> · <b class="bad">No start tile</b> — place a Start / Finish piece.`;
       return;
     }
     const orphan = roads - p.cells.length;
     el.innerHTML =
-      `Circuit: <b>${p.cells.length}</b> tiles · ` +
+      `Level <b>${this.level}</b> (${this.level * LEVEL_H} m) · Circuit: <b>${p.cells.length}</b> tiles · ` +
       (p.closed ? '<b class="ok">closed loop ✓</b>' : '<b class="bad">open</b> (the race ends on the last tile)') +
       (orphan > 0 ? ` · <b class="bad">${orphan} unconnected road tile${orphan > 1 ? 's' : ''}</b>` : '');
     this.path = p;
@@ -298,6 +324,15 @@ export class Editor {
       ctx.fillStyle = 'rgba(77,255,166,0.07)';
       for (const c of this.path.cells) for (const k of c.covers) ctx.fillRect((k % GRID) * s, Math.floor(k / GRID) * s, s, s);
     }
+    // Elevation of raised road tiles
+    ctx.font = `bold ${Math.round(s * 0.3)}px sans-serif`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    this.track.cells.forEach((cell, i) => {
+      if (!cell.h || !TYPES[cell.t].road) return;
+      ctx.fillStyle = `hsl(${40 - cell.h * 5}, 100%, ${70 - cell.h * 3}%)`;
+      ctx.fillText(`▲${cell.h}`, (i % GRID) * s + s - 2, Math.floor(i / GRID) * s + 2);
+    });
     if (this.hover) {
       const { c, r } = this.hover;
       ctx.save();
