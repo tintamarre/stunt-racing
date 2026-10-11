@@ -19,6 +19,7 @@ export class Hud {
       best: $('hudBest'),
       lap: $('hudLap'),
       pos: $('hudPos'),
+      item: $('hudItem'),
       prog: $('hudProg'),
       progTxt: $('hudProgTxt'),
       speed: $('hudSpeed'),
@@ -90,6 +91,10 @@ export class Hud {
     set('cam', e.cam, s.cam);
     set('prog', e.progTxt, `${s.visited}/${s.total}`);
     set('lap', e.lap, s.laps > 1 ? `LAP ${Math.min(s.lap, s.laps)}/${s.laps}` : '');
+    if (e.item) {
+      set('item', e.item, s.item || '');
+      e.item.classList.toggle('on', !!s.item);
+    }
     if (e.pos) set('pos', e.pos, s.pos ? `${ordinal(s.pos)}${s.field > 2 ? ` / ${s.field}` : ''}` : '');
     const pw = `${(100 * s.visited) / Math.max(1, s.total)}%`;
     if (this.last.pw !== pw) {
@@ -119,6 +124,8 @@ export class Hud {
         c.fill();
       };
       if (s.ghost) dot(s.ghost, 'rgba(120,220,255,0.8)', 5);
+      // Tiles missed on the last pass over the line, blinking
+      if (s.missing && Math.floor(performance.now() / 300) % 2) for (const m of s.missing) dot(m, '#ff3b3b', 7);
       for (const o of s.others || []) dot(o.p, o.human ? '#3a8bff' : '#e6e9ef', o.human ? 6.5 : 4.5);
       c.strokeStyle = '#fff';
       c.lineWidth = 2;

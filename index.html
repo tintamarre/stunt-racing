@@ -77,6 +77,14 @@
           </div>
         </section>
 
+        <section class="card row">
+          <header>Items <span class="keys">E / Right Ctrl</span></header>
+          <div class="seg" id="itemsSeg">
+            <button data-items="off">Off</button>
+            <button data-items="on">On</button>
+          </div>
+        </section>
+
         <section class="card row" id="aiCard">
           <header>Opponent level</header>
           <div class="seg" id="aiSeg">
@@ -162,6 +170,7 @@
         <div class="hud-best">Best <span id="hudBest">—</span></div>
         <div class="hud-lap" id="hudLap"></div>
         <div class="hud-pos" id="hudPos"></div>
+        <div class="hud-item" id="hudItem"></div>
       </div>
       <div class="hud-tc">
         <div class="progress"><i id="hudProg"></i></div>
@@ -192,6 +201,7 @@
       </div>
       <div class="t-right">
         <button data-touch="hb" class="small" id="tDrift" aria-label="Drift">DRIFT</button>
+        <button id="tItem" class="small" aria-label="Use item">ITEM</button>
         <button data-touch="brake" aria-label="Brake">▼</button>
         <button data-touch="gas" class="gas" aria-label="Accelerate">▲</button>
       </div>
@@ -246,6 +256,7 @@
           <div><kbd>↓</kbd>/<kbd>S</kbd></div><div>Brake / reverse (in the air: lean back)</div>
           <div><kbd>←</kbd><kbd>→</kbd>/<kbd>A</kbd><kbd>D</kbd></div><div>Steer (in the air: spin)</div>
           <div><kbd>Space</kbd>/<kbd>Shift</kbd></div><div>Arcade: hold while steering to drift, release for a mini-turbo (blue sparks, then orange for a super turbo). Classic: handbrake</div>
+          <div><kbd>E</kbd></div><div>Use your item (🚀 turbo, 🍌 banana, 🦘 spring, ⭐ star) — drive through the <b>?</b> boxes to get one. Player 2: Right Ctrl</div>
           <div><kbd>H</kbd></div><div>Horn (each car has its own!)</div>
           <div><kbd>C</kbd></div><div>Change camera (chase, bumper, TV, heli, cinematic)</div>
           <div><kbd>R</kbd></div><div>Put the car back on the track</div>

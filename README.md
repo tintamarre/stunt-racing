@@ -12,6 +12,8 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 - Six cars (three of them silly), eleven built-in tracks (three easy ones for beginners, two in the mountains with climbs and descents) with wide (2×2) and sweeping (3×3) curves, bridges over streams and solid tunnels you can also drive over, day / sunset / night lighting, and clear / rain / snow weather (slippery roads, falling rain or snow, wet or snowy look).
 - 1 to 5 lap races, with lap times and a best time per lap count.
 - Up to 5 computer opponents (easy / normal / hard) on a starting grid, with live positions and final standings. They ease off when ahead and push when behind, so races stay close.
+- Mario Kart style items: drive through the ? boxes, then use (E, Right Ctrl for player 2) a 🚀 turbo, a 🍌 banana, a 🦘 spring or a ⭐ star. Players at the back get the better items.
+- A lap counts when you have driven over (or close to) every tile; cut too much and MISSED TILES! shows them blinking on the minimap.
 - Funny visual damage: dents, parts flying off, engine smoke and backfires (it never changes how the car drives).
 - Trees hit above ~20 km/h snap and let the car through, at the cost of some speed. Scraping a wall at a shallow angle slides the car along it; only a big wall hit head-on stops it.
 - Track editor: paint tiles (including 2×2 wide curves, 3×3 sweeping curves, slopes and elevation levels, bridges and tunnels) on a 16×16 board, test-drive instantly, save locally or copy a share link (the whole track is encoded in the URL).
@@ -29,6 +31,7 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 | H | Horn |
 | C | Change camera |
 | R | Put the car back on the track |
+| E | Use item (player 2: Right Ctrl) |
 | G | Toggle ghost |
 | Esc | Pause |
 

@@ -47,7 +47,7 @@ async function boot() {
   cloneHud();
   const game = new Game(world, audio, input, hud);
   game.hud2 = new Hud('p2');
-  const prefs = { car: 0, preset: 'day', weather: 'clear', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, opponents: 3, ai: 'normal', ...prefStore.load() };
+  const prefs = { car: 0, preset: 'day', weather: 'clear', quality: 'high', track: 0, handling: 'arcade', autoReturn: false, laps: 3, players: 1, car2: 1, opponents: 3, ai: 'normal', items: true, ...prefStore.load() };
   if (isTouch) prefs.players = 1;
 
   // Track list: built-ins, the player's tracks, and a shared one from the URL
@@ -121,6 +121,14 @@ async function boot() {
     $('car2Swatch').style.background = hex;
     $('car2Swatch').style.color = hex;
     game.setPlayers(prefs.players, prefs.car2);
+  }
+
+  function selectItems(on) {
+    prefs.items = on;
+    savePrefs();
+    game.setItems(on);
+    document.querySelectorAll('#itemsSeg button').forEach((b) => b.classList.toggle('on', (b.dataset.items === 'on') === on));
+    $('tItem').classList.toggle('hidden', !on);
   }
 
   function selectOpponents(n, level = prefs.ai) {
@@ -278,6 +286,11 @@ async function boot() {
   document.querySelectorAll('#weatherSeg button').forEach((b) => b.addEventListener('click', () => selectWeather(b.dataset.weather)));
   document.querySelectorAll('#lapsSeg button').forEach((b) => b.addEventListener('click', () => selectLaps(+b.dataset.laps)));
   document.querySelectorAll('#playersSeg button').forEach((b) => b.addEventListener('click', () => selectPlayers(+b.dataset.players)));
+  document.querySelectorAll('#itemsSeg button').forEach((b) => b.addEventListener('click', () => selectItems(b.dataset.items === 'on')));
+  $('tItem').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    game.useItem(1);
+  });
   document.querySelectorAll('#oppSeg button').forEach((b) => b.addEventListener('click', () => selectOpponents(+b.dataset.opp)));
   document.querySelectorAll('#aiSeg button').forEach((b) => b.addEventListener('click', () => selectOpponents(prefs.opponents, b.dataset.ai)));
   document.querySelectorAll('#handlingSeg button').forEach((b) => b.addEventListener('click', () => selectHandling(b.dataset.handling)));
@@ -375,6 +388,8 @@ async function boot() {
     const p2 = game.p2;
     if (p2 && code === 'Comma') p2.rig.cycle();
     if (p2 && code === 'Period') audio.horn(CARS[p2.carIdx].horn);
+    if (code === 'KeyE') game.useItem(1);
+    if (p2 && (code === 'ControlRight' || code === 'Numpad1')) game.useItem(2);
     if (code === 'KeyM') {
       audio.setMuted(!audio.muted);
       soundLabel();
@@ -413,6 +428,7 @@ async function boot() {
   selectCar2(prefs.car2);
   selectPlayers(prefs.players);
   selectOpponents(prefs.opponents, prefs.ai);
+  selectItems(prefs.items);
   if (isTouch) $('playersSeg').closest('.card').classList.add('hidden');
   selectWeather(prefs.weather);
   selectPreset(prefs.preset);

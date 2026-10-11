@@ -12,6 +12,7 @@ import { records } from './storage.js';
 import { terrainHeight } from './terrain.js';
 import { WEATHER_GRIP } from './weather.js';
 import { Damage } from './damage.js';
+import { Items } from './items.js';
 
 const FR = 16; // floats per recorded frame
 const MAX_FRAMES = 60 * 60 * 12;
@@ -71,6 +72,19 @@ export class Game {
     this.opponents = 3;
     this.aiLevel = 'normal';
     this.bots = [];
+    this.items = new Items(this);
+  }
+
+  setItems(on) {
+    this.items.enabled = on;
+    this.items.setVisible(on);
+  }
+
+  // Item button of a human player (slot 1 or 2)
+  useItem(slot = 1) {
+    if (this.mode !== 'race') return;
+    const pl = slot === 2 ? this.p2 : this;
+    if (pl && !pl.done) this.items.use(pl);
   }
 
   // Human players (they own a camera and a HUD)
@@ -145,6 +159,7 @@ export class Game {
     if (this.physics) this.physics.free();
     this.physics = new Physics(built);
     this.rig.setTrack(this.path);
+    this.items.build(this.path);
     this.cellIndex = new Map(this.path.cells.flatMap((c, i) => c.covers.map((k) => [k, i])));
     // First path point of each cell, for race positions
     this.cellStart = [];
@@ -321,6 +336,7 @@ export class Game {
     this.recN = 0;
     this.particles.clear();
     this.finishedAt = null;
+    this.items.reset(this.everyone());
     // Opponents in front, humans at the back of the grid
     const grid = [...this.bots, ...this.racers()];
     for (const pl of grid) {
@@ -328,6 +344,8 @@ export class Game {
       pl.car.reset(pose.pos, pose.q);
       this.syncTransforms(true, pl);
       pl.autopilot.reset(pose.k);
+      pl.track = pose.k;
+      pl.missedT = 0;
       pl.lastCi = this.path.points[pose.k].cell;
       pl.visited = new Set([0]);
       pl.raceTime = 0;
@@ -382,6 +400,8 @@ export class Game {
     const pose = this.spawnPose(pl.lastCi);
     pl.car.reset(pose.pos, pose.q);
     this.syncTransforms(true, pl);
+    pl.track = pose.k;
+    pl.autopilot?.reset(pose.k);
     for (let i = 0; i < 4; i++) pl.skids?.lift(i);
     pl.flipT = 0;
     pl.offT = 0;
@@ -442,6 +462,7 @@ export class Game {
         for (const i of this.physics.smashTrees(car)) this.fellTree(i, pl);
       }
     }
+    if (this.mode === 'race' || this.mode === 'finished') this.items.step(pls, this.mode === 'race' || this.bots.length > 0);
     this.physics.step();
     for (const pl of pls) this.afterStep(pl);
     if (this.p2 && this.mode === 'race') this.checkSplitEnd();
@@ -474,12 +495,20 @@ export class Game {
         pl.visited.add(ci);
         pl.lastCi = ci;
       }
+      // A tile also counts when the car passes near its centre line (cutting a corner over the grass)
+      const near = this.trackPoint(pl, p);
+      if (near) pl.visited.add(near.cell);
       if (racing) {
         if (!pl.done) pl.raceTime += DT;
         const lx = tmp.copy(p).sub(this.startCenter).dot(this.startDir);
-        const done = this.path.closed
-          ? pl.visited.size === this.path.cells.length && ci === 0 && lx > 0 && pl.prevLocalX <= 0
-          : pl.visited.size === this.path.cells.length && ci === this.path.cells.length - 1;
+        const n = this.path.cells.length;
+        const enough = pl.visited.size >= n - Math.floor(n * 0.08);
+        const crossed = this.path.closed && ci === 0 && lx > 0 && pl.prevLocalX <= 0;
+        const done = this.path.closed ? enough && crossed : enough && ci === n - 1;
+        if (crossed && !enough && !pl.bot) {
+          pl.hud.message('MISSED TILES!', 'crash', 1.6);
+          pl.missedT = 5;
+        }
         if (ci === 0) pl.prevLocalX = lx;
         else pl.prevLocalX = -99;
         if (done && pl.lap < this.lapCount()) {
@@ -494,9 +523,10 @@ export class Game {
           if (pl.bot || this.p2) this.finishPlayer(pl);
           else this.finish();
         }
-      } else if (pl.visited.size === this.path.cells.length && ci === 0) {
+      } else if (pl.visited.size >= this.path.cells.length - 2 && ci === 0) {
         pl.visited = new Set([0]);
       }
+      if (pl.missedT > 0) pl.missedT -= DT;
       // Crash / stuck detection
       const up = car.up(tmp);
       if (up.y < 0.25 && car.speed() < 3) pl.flipT += DT;
@@ -570,6 +600,31 @@ export class Game {
       }
       car.turboEvent = 0;
     }
+  }
+
+  // Nearest centre-line point, searched a little ahead of the last one; null when far off the road
+  trackPoint(pl, p) {
+    const pts = this.path.points;
+    const N = pts.length;
+    let best = pl.track ?? 0;
+    let bd = Infinity;
+    for (let k = -10; k < 60; k++) {
+      const j = (((pl.track ?? 0) + k) % N + N) % N;
+      const d = pts[j].p.distanceToSquared(p);
+      if (d < bd) {
+        bd = d;
+        best = j;
+      }
+    }
+    if (bd > 22 * 22) return null;
+    pl.track = best;
+    return pts[best];
+  }
+
+  // Tiles still to drive over this lap (shown on the minimap after a missed lap)
+  missingTiles(pl) {
+    if (!(pl.missedT > 0)) return null;
+    return this.path.cells.map((_, i) => i).filter((i) => !pl.visited.has(i)).map((i) => this.path.points[this.cellStart[i]].p);
   }
 
   // Position inside the current cell (0..999), from the nearest centre-line point
@@ -796,6 +851,7 @@ export class Game {
 
     this.particles.update(this.mode === 'paused' || (this.mode === 'replay' && this.replayPaused) ? 0 : dt);
     for (const pl of all) pl.damage?.update(sim ? dt : 0);
+    this.items.update(dt, this.clock, all);
 
     // Cameras
     const speeds = pls.map((pl, i) => {
@@ -834,6 +890,8 @@ export class Game {
         laps: this.lapCount(),
         pos: rank && this.mode !== 'countdown' ? rank.indexOf(pl) + 1 : 0,
         field: all.length,
+        item: this.mode === 'race' ? this.items.view(pl) : '',
+        missing: this.missingTiles(pl),
       });
     });
 

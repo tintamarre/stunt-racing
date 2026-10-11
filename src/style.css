@@ -954,3 +954,19 @@ body.split .hud-tc {
     top: 50%;
   }
 }
+.hud-item {
+  display: none;
+  margin-top: 8px;
+  width: 64px;
+  height: 64px;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  border-radius: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  background: rgba(10, 14, 22, 0.45);
+  box-shadow: 0 0 18px rgba(255, 210, 80, 0.35);
+}
+.hud-item.on {
+  display: flex;
+}

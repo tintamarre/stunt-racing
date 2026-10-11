@@ -231,6 +231,19 @@ export class Car {
     this.drift = 0;
     this.driftCharge = 0;
     this.turboT = 0;
+    this.stunT = 0;
+  }
+
+  // Spin out (banana, star hit): no control for a moment while the car pirouettes
+  stun(t, dir = Math.random() < 0.5 ? -1 : 1) {
+    if (this.stunT > 0) return;
+    this.stunT = t;
+    const lv = this.body.linvel();
+    this.body.setLinvel({ x: lv.x * 0.5, y: lv.y + 2.5, z: lv.z * 0.5 }, true);
+    const up = this.up(new Vector3());
+    this.body.setAngvel({ x: up.x * 8 * dir, y: up.y * 8 * dir, z: up.z * 8 * dir }, true);
+    this.drift = 0;
+    this.driftCharge = 0;
   }
 
   driftLevel() {
@@ -257,6 +270,10 @@ export class Car {
 
   // input: { throttle, brake, steer, handbrake }
   update(input) {
+    if (this.stunT > 0) {
+      this.stunT -= DT;
+      input = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+    }
     const v = this.vehicle;
     const spec = this.spec;
     const body = this.body;
@@ -484,7 +501,7 @@ export class Car {
       this.boosting = Math.max(this.boosting, 0.3);
       if (contacts > 0) body.applyImpulse({ x: fwd.x * m * 15 * dt, y: fwd.y * m * 15 * dt, z: fwd.z * m * 15 * dt }, true);
     }
-    if (!grounded) return;
+    if (!grounded || this.stunT > 0) return;
 
     // Yaw rate from steering (reversed when backing up). Into the drift tightens, counter-steer widens.
     const k = this.drift ? -this.drift * (0.7 + 0.5 * input.steer * this.drift) : -input.steer;
