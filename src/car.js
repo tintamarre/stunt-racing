@@ -190,11 +190,15 @@ function loft(stations, n = 4, seg = 24) {
   return g;
 }
 
+// How much the nose lifts on a burnout start, per body
+const WHEELIE = { gt: 0.7, rally: 0.8, muscle: 1.3, hotdog: 0.9, bubble: 0.6, monster: 1.7 };
+
 export class CarModel {
   constructor(spec, { ghost = false } = {}) {
     const P = BODIES[spec.body];
     this.group = new THREE.Group();
     this.body = new THREE.Group();
+    this.kind = spec.body;
     this.group.add(this.body);
     this.ghost = ghost;
 
@@ -492,12 +496,18 @@ export class CarModel {
 
   // state: { steer, spin, susp[4], brake, boost }
   apply(state, t) {
+    // Burnout: the driven rear wheels race ahead of the car, the nose lifts (more on the big ones)
+    const burn = state.burn || 0;
+    this.burnSpin = (this.burnSpin || 0) + burn * 0.9;
     for (let i = 0; i < 4; i++) {
       const w = this.wheels[i];
       w.steer.position.y = -(state.susp[i] ?? 0.36);
       w.steer.rotation.y = i < 2 ? state.steer : 0;
-      w.spin.rotation.z = -state.spin;
+      w.spin.rotation.z = -state.spin - (i >= 2 ? this.burnSpin : this.burnSpin * 0.25);
     }
+    const lift = burn * (WHEELIE[this.kind] ?? 0.8);
+    this.body.rotation.z += (lift * 0.11 + Math.sin(t * 40) * 0.006 * burn - this.body.rotation.z) * 0.25;
+    this.body.position.y += (lift * 0.06 - this.body.position.y) * 0.25;
     this.tailMat.emissiveIntensity = state.brake ? 4 : 0.8;
     for (const f of this.flames) {
       f.visible = !!state.boost;

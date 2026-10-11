@@ -23,6 +23,7 @@ const GHOST_STRIDE = 2;
 const smokeColor = new THREE.Color(0.85, 0.85, 0.86);
 const dustColor = new THREE.Color(0.55, 0.45, 0.3);
 const grassColor = new THREE.Color(0.35, 0.5, 0.2);
+const mudColor = new THREE.Color(0.28, 0.19, 0.1);
 const sparkBlue = new THREE.Color(0.35, 0.75, 1.6);
 const leafColor = new THREE.Color(0.3, 0.6, 0.18);
 const woodColor = new THREE.Color(0.45, 0.3, 0.17);
@@ -579,6 +580,7 @@ export class Game {
 
     // Effects
     this.emitEffects(car, v, pl.skids);
+    this.burnout(pl);
     if (car.landing > 0) {
       pl.rig.shake = Math.max(pl.rig.shake, car.landing * 0.5);
       if (!pl.bot) this.audio.impact(car.landing);
@@ -705,6 +707,41 @@ export class Game {
     this.stunts.add(pl, 'TIMBER', 80);
   }
 
+  // Full throttle from a standstill (or out of reverse): the rear wheels spin, smoke on the
+  // asphalt, mud flying off the grass, and the model lifts its nose (see CarModel.apply)
+  burnout(pl) {
+    const car = pl.car;
+    const v = car.vehicle;
+    const lv = car.body.linvel();
+    const fsp = car.forward(tmp).dot(tmp2.set(lv.x, lv.y, lv.z));
+    const thr = this.mode === 'countdown' ? pl.revThrottle || 0 : pl.lastInput?.throttle || 0;
+    const want = car.contacts >= 3 && thr > 0.5 && fsp < 14 && fsp > -8 && !(car.stunT > 0) ? thr * (1 - Math.max(0, fsp) / 14) : 0;
+    pl.burn = (pl.burn || 0) + (want - (pl.burn || 0)) * (want > (pl.burn || 0) ? 0.25 : 0.08);
+    if (pl.burn < 0.15) return;
+    const back = car.forward(tmp3).multiplyScalar(-1);
+    for (let i = 2; i < 4; i++) {
+      if (!v.wheelIsInContact(i)) continue;
+      const cp = v.wheelContactPoint(i);
+      if (!cp) continue;
+      const g = v.wheelGroundObject(i);
+      const grass = g && g.handle === this.physics.ground.handle;
+      car.slip[i] = Math.max(car.slip[i], pl.burn);
+      if (grass) {
+        // Clods of mud thrown back and up, falling again
+        for (let k = 0; k < 2; k++) {
+          if (Math.random() > pl.burn) continue;
+          tmp6.set(cp.x, cp.y + 0.15, cp.z);
+          tmp7.copy(back).multiplyScalar(5 + Math.random() * 6).add(tmp5.set((Math.random() - 0.5) * 2.5, 3 + Math.random() * 4, (Math.random() - 0.5) * 2.5));
+          this.particles.emit(tmp6, tmp7, Math.random() < 0.7 ? mudColor : dustColor, 0.95, 0.16 + Math.random() * 0.12, 0.9, 11);
+        }
+      } else if (Math.random() < pl.burn) {
+        tmp6.set(cp.x, cp.y + 0.25, cp.z);
+        tmp7.copy(back).multiplyScalar(2.5).add(tmp5.set((Math.random() - 0.5) * 1.5, 0.8, (Math.random() - 0.5) * 1.5));
+        this.particles.emit(tmp6, tmp7, smokeColor, 0.45 * pl.burn + 0.15, 0.9, 1.8);
+      }
+    }
+  }
+
   emitEffects(car, v, skids) {
     const lv = car.body.linvel();
     const vel = tmp2.set(lv.x, lv.y, lv.z);
@@ -818,6 +855,7 @@ export class Game {
           susp: [0, 1, 2, 3].map((i) => v.wheelSuspensionLength(i)),
           brake: pl.car.braking,
           boost: pl.car.boosting > 0,
+          burn: pl.burn || 0,
         });
       }
       if (this.mode === 'attract') {

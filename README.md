@@ -16,6 +16,7 @@ A modern browser tribute to the 1990 classic *Stunts*: loops, jumps, banked turn
 - A lap counts when you have driven over (or close to) every tile; cut too much and MISSED TILES! shows them blinking on the minimap.
 - Coins along every track and three stars per circuit: finish, beat the par time, collect every coin in one race.
 - Stunt score: air time, flips, loops, drifts, mini-turbos and felled trees score points; chain them within 2.5 s for up to ×5, crash and the chain is lost. Best score saved per track.
+- Burnout starts: from a standstill or out of reverse the rear wheels spin, smoke on asphalt, throw mud on grass, and the nose lifts (a lot on the monster truck).
 - Funny visual damage: dents, parts flying off, engine smoke and backfires (it never changes how the car drives).
 - Trees hit above ~20 km/h snap and let the car through, at the cost of some speed. Scraping a wall at a shallow angle slides the car along it; only a big wall hit head-on stops it.
 - Track editor: paint tiles (including 2×2 wide curves, 3×3 sweeping curves, slopes and elevation levels, bridges and tunnels) on a 16×16 board, test-drive instantly, save locally or copy a share link (the whole track is encoded in the URL).

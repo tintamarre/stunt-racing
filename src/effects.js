@@ -11,6 +11,7 @@ export class Particles {
     this.vel = new Float32Array(MAX_P * 3);
     this.age = new Float32Array(MAX_P).fill(1e9);
     this.life = new Float32Array(MAX_P).fill(1);
+    this.grav = new Float32Array(MAX_P); // falling debris (mud) instead of rising smoke
     this.base = new Float32Array(MAX_P * 4);
     this.next = 0;
     const g = new THREE.BufferGeometry();
@@ -32,7 +33,7 @@ export class Particles {
     window.addEventListener('resize', () => (m.uniforms.scale.value = window.innerHeight));
   }
 
-  emit(p, v, color, alpha, size, life) {
+  emit(p, v, color, alpha, size, life, grav = 0) {
     const i = this.next;
     this.next = (this.next + 1) % MAX_P;
     this.pos.set([p.x, p.y, p.z], i * 3);
@@ -41,6 +42,7 @@ export class Particles {
     this.age[i] = 0;
     this.life[i] = life;
     this.size[i] = size;
+    this.grav[i] = grav;
   }
 
   update(dt) {
@@ -53,12 +55,12 @@ export class Particles {
       }
       const damp = Math.exp(-dt * 2.2);
       this.vel[i * 3] *= damp;
-      this.vel[i * 3 + 1] = this.vel[i * 3 + 1] * damp + dt * 0.6;
+      this.vel[i * 3 + 1] = this.vel[i * 3 + 1] * damp + dt * (0.6 - this.grav[i]);
       this.vel[i * 3 + 2] *= damp;
       this.pos[i * 3] += this.vel[i * 3] * dt;
       this.pos[i * 3 + 1] += this.vel[i * 3 + 1] * dt;
       this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
-      this.size[i] += dt * 2.4;
+      this.size[i] += dt * (this.grav[i] ? 0.2 : 2.4);
       this.col[i * 4] = this.base[i * 4];
       this.col[i * 4 + 1] = this.base[i * 4 + 1];
       this.col[i * 4 + 2] = this.base[i * 4 + 2];
