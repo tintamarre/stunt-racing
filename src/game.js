@@ -8,11 +8,12 @@ import { CarModel } from './car.js';
 import { CameraRig, CAM_MODES } from './camera.js';
 import { Particles, Skids } from './effects.js';
 import { Autopilot } from './autopilot.js';
-import { records } from './storage.js';
+import { records, stars } from './storage.js';
 import { terrainHeight } from './terrain.js';
 import { WEATHER_GRIP } from './weather.js';
 import { Damage } from './damage.js';
 import { Items } from './items.js';
+import { Coins } from './coins.js';
 
 const FR = 16; // floats per recorded frame
 const MAX_FRAMES = 60 * 60 * 12;
@@ -73,6 +74,7 @@ export class Game {
     this.aiLevel = 'normal';
     this.bots = [];
     this.items = new Items(this);
+    this.coinField = new Coins(this);
   }
 
   setItems(on) {
@@ -160,6 +162,7 @@ export class Game {
     this.physics = new Physics(built);
     this.rig.setTrack(this.path);
     this.items.build(this.path);
+    this.coinField.build(this.path);
     this.cellIndex = new Map(this.path.cells.flatMap((c, i) => c.covers.map((k) => [k, i])));
     // First path point of each cell, for race positions
     this.cellStart = [];
@@ -337,6 +340,7 @@ export class Game {
     this.particles.clear();
     this.finishedAt = null;
     this.items.reset(this.everyone());
+    this.coinField.reset(this.everyone());
     // Opponents in front, humans at the back of the grid
     const grid = [...this.bots, ...this.racers()];
     for (const pl of grid) {
@@ -344,7 +348,7 @@ export class Game {
       pl.car.reset(pose.pos, pose.q);
       this.syncTransforms(true, pl);
       pl.autopilot.reset(pose.k);
-      pl.track = pose.k;
+      pl.trackIdx = pose.k;
       pl.missedT = 0;
       pl.lastCi = this.path.points[pose.k].cell;
       pl.visited = new Set([0]);
@@ -400,7 +404,7 @@ export class Game {
     const pose = this.spawnPose(pl.lastCi);
     pl.car.reset(pose.pos, pose.q);
     this.syncTransforms(true, pl);
-    pl.track = pose.k;
+    pl.trackIdx = pose.k;
     pl.autopilot?.reset(pose.k);
     for (let i = 0; i < 4; i++) pl.skids?.lift(i);
     pl.flipT = 0;
@@ -463,6 +467,7 @@ export class Game {
       }
     }
     if (this.mode === 'race' || this.mode === 'finished') this.items.step(pls, this.mode === 'race' || this.bots.length > 0);
+    if (this.mode === 'race') this.coinField.step(pls);
     this.physics.step();
     for (const pl of pls) this.afterStep(pl);
     if (this.p2 && this.mode === 'race') this.checkSplitEnd();
@@ -606,10 +611,10 @@ export class Game {
   trackPoint(pl, p) {
     const pts = this.path.points;
     const N = pts.length;
-    let best = pl.track ?? 0;
+    let best = pl.trackIdx ?? 0;
     let bd = Infinity;
     for (let k = -10; k < 60; k++) {
-      const j = (((pl.track ?? 0) + k) % N + N) % N;
+      const j = (((pl.trackIdx ?? 0) + k) % N + N) % N;
       const d = pts[j].p.distanceToSquared(p);
       if (d < bd) {
         bd = d;
@@ -617,7 +622,7 @@ export class Game {
       }
     }
     if (bd > 22 * 22) return null;
-    pl.track = best;
+    pl.trackIdx = best;
     return pts[best];
   }
 
@@ -744,7 +749,17 @@ export class Game {
       records.put(this.recordKey(), this.record);
     }
     this.audio.beep(988, 0.5);
-    this.hud.finish({ time, prevBest, isBest, crashes: this.crashes, track: this.track.name, lapTimes: this.lapTimes, place, standings: place ? this.standings() : null });
+    // Stars: finish, par time, every coin
+    const par = this.coinField.parTime(this.lapCount());
+    const won = { finish: true, par: time <= par, coins: this.coinField.coins.length > 0 && this.coins === this.coinField.coins.length };
+    const had = stars.get(this.code) || {};
+    const fresh = Object.keys(won).filter((k) => won[k] && !had[k]);
+    stars.put(this.code, { finish: true, par: had.par || won.par, coins: had.coins || won.coins });
+    this.hud.finish({
+      time, prevBest, isBest, crashes: this.crashes, track: this.track.name, lapTimes: this.lapTimes, place,
+      standings: place ? this.standings() : null,
+      stars: won, freshStars: fresh, allStars: stars.get(this.code), par, coins: this.coins, coinTotal: this.coinField.coins.length,
+    });
   }
 
   // ------------------------------------------------------------------ per frame
@@ -852,6 +867,7 @@ export class Game {
     this.particles.update(this.mode === 'paused' || (this.mode === 'replay' && this.replayPaused) ? 0 : dt);
     for (const pl of all) pl.damage?.update(sim ? dt : 0);
     this.items.update(dt, this.clock, all);
+    this.coinField.update(this.clock);
 
     // Cameras
     const speeds = pls.map((pl, i) => {
@@ -892,6 +908,7 @@ export class Game {
         field: all.length,
         item: this.mode === 'race' ? this.items.view(pl) : '',
         missing: this.missingTiles(pl),
+        coins: this.coinField.coins.length ? `${pl.coins || 0}/${this.coinField.coins.length}` : '',
       });
     });
 

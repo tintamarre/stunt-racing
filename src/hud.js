@@ -20,6 +20,7 @@ export class Hud {
       lap: $('hudLap'),
       pos: $('hudPos'),
       item: $('hudItem'),
+      coins: $('hudCoins'),
       prog: $('hudProg'),
       progTxt: $('hudProgTxt'),
       speed: $('hudSpeed'),
@@ -91,6 +92,7 @@ export class Hud {
     set('cam', e.cam, s.cam);
     set('prog', e.progTxt, `${s.visited}/${s.total}`);
     set('lap', e.lap, s.laps > 1 ? `LAP ${Math.min(s.lap, s.laps)}/${s.laps}` : '');
+    if (e.coins) set('coins', e.coins, s.coins ? `🪙 ${s.coins}` : '');
     if (e.item) {
       set('item', e.item, s.item || '');
       e.item.classList.toggle('on', !!s.item);

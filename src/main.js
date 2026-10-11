@@ -9,7 +9,8 @@ import { Editor } from './editor.js';
 import { BUILTIN } from './tracks.js';
 import { decodeTrack, tracePath, TYPES } from './track.js';
 import { drawBoardCropped } from './tiledraw.js';
-import { prefs as prefStore, customTracks, records } from './storage.js';
+import { prefs as prefStore, customTracks, records, stars } from './storage.js';
+import { starText } from './coins.js';
 
 const $ = (id) => document.getElementById(id);
 const screens = ['menu', 'hud', 'pause', 'finish', 'replay', 'help', 'touch'];
@@ -89,14 +90,19 @@ async function boot() {
     if (jumps) bits.push(`${jumps} jump${jumps > 1 ? 's' : ''}`);
     if (game.lapCount() > 1) bits.push(`${game.lapCount()} laps`);
     $('trackInfo').textContent = `${kind} · ${bits.join(' · ')}`;
-    const rec = records.get(game.recordKey());
-    $('trackBest').textContent = rec ? `Best ${fmtTime(rec.time)} · ${CARS[rec.car ?? 0].name}` : 'No record yet';
+    showBest();
     const ctx = $('trackPreview').getContext('2d');
     drawBoardCropped(ctx, track, 160, { grid: false, bg: '#16301a' });
     if (kind === 'Built-in') {
       prefs.track = trackIdx;
       savePrefs();
     }
+  }
+
+  // Stars and best time of the selected track, under its name
+  function showBest() {
+    const rec = records.get(game.recordKey());
+    $('trackBest').textContent = `${starText(stars.get(game.code))}  ` + (rec ? `Best ${fmtTime(rec.time)} · ${CARS[rec.car ?? 0].name}` : 'No record yet');
   }
 
   function selectCar(i) {
@@ -211,11 +217,18 @@ async function boot() {
   hud.onFinish = (r) => {
     document.querySelector('#finish [data-act=replay]').classList.toggle('hidden', !!r.split);
     if (r.split) return finishSplit(r);
+    showBest();
     finTitle.textContent = r.place ? (r.place === 1 ? 'YOU WIN!' : `${ordinal(r.place)} PLACE`) : 'FINISH';
     $('finDetail').style.whiteSpace = r.standings ? 'pre-line' : '';
     $('finTime').textContent = fmtTime(r.time);
     $('finTrack').textContent = `${r.track} · ${CARS[game.carIdx].name}`;
     $('finRecord').classList.toggle('hidden', !r.isBest);
+    // ★ finish · ★ par time · ★ all coins, the new ones pop
+    $('finStars').innerHTML = r.stars
+      ? [['finish', 'Finish'], ['par', `Par ${fmtTime(r.par)}`], ['coins', `Coins ${r.coins}/${r.coinTotal}`]]
+          .map(([k, label]) => `<span class="${r.allStars?.[k] ? 'on' : ''} ${r.freshStars.includes(k) ? 'new' : ''}"><b>★</b>${label}</span>`)
+          .join('')
+      : '';
     const parts = [];
     if (r.prevBest && !r.isBest) parts.push(`Best ${fmtTime(r.prevBest)} (+${(r.time - r.prevBest).toFixed(2)}s)`);
     if (r.prevBest && r.isBest) parts.push(`${(r.prevBest - r.time).toFixed(2)}s faster than before`);
@@ -237,6 +250,7 @@ async function boot() {
   }
 
   function finishSplit(r) {
+    $('finStars').innerHTML = '';
     const w = r.results[r.winner];
     finTitle.textContent = w.time != null ? `${w.name.toUpperCase()} WINS!` : 'NO WINNER';
     $('finTime').textContent = fmtTime(w.time);

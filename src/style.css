@@ -970,3 +970,44 @@ body.split .hud-tc {
 .hud-item.on {
   display: flex;
 }
+.hud-coins {
+  margin-top: 4px;
+  font-family: var(--display);
+  font-size: 22px;
+  color: #ffd84a;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.fin-stars {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin: 10px 0 4px;
+  flex-wrap: wrap;
+}
+.fin-stars span {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 12px;
+  color: var(--muted);
+}
+.fin-stars b {
+  font-size: 34px;
+  line-height: 1.1;
+  color: rgba(255, 255, 255, 0.18);
+}
+.fin-stars .on b {
+  color: #ffd84a;
+  text-shadow: 0 0 16px rgba(255, 200, 60, 0.7);
+}
+.fin-stars .new b {
+  animation: starpop 0.9s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+}
+@keyframes starpop {
+  0% {
+    transform: scale(0) rotate(-90deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}

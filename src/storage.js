@@ -39,6 +39,12 @@ function unb64(s) {
   return new Float32Array(bytes.buffer);
 }
 
+// Stars earned per track code: { finish, par, coins }
+export const stars = {
+  get: (code) => get(`stunt.stars.${code}`, null),
+  put: (code, s) => set(`stunt.stars.${code}`, s),
+};
+
 // Best time + ghost per track code (and lap count: 1-lap records keep the bare code)
 export const records = {
   key: (code, laps) => (laps > 1 ? `${code}~${laps}` : code),
