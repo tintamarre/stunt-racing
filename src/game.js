@@ -361,6 +361,8 @@ export class Game {
       pl.boostT = 0;
       pl.lastCi = this.path.points[pose.k].cell;
       pl.visited = new Set([0]);
+      // Back rows of the grid start behind the line: their first crossing is the start, not a lap
+      pl.behindLine = this.path.closed && tmp.copy(pose.pos).sub(this.startCenter).dot(this.startDir) < 0;
       pl.raceTime = 0;
       pl.lap = 1;
       pl.lapStart = 0;
@@ -533,8 +535,11 @@ export class Game {
         const n = this.path.cells.length;
         const enough = pl.visited.size >= n - Math.floor(n * 0.08);
         const crossed = this.path.closed && ci === 0 && lx > 0 && pl.prevLocalX <= 0;
-        const done = this.path.closed ? enough && crossed : enough && ci === n - 1;
-        if (crossed && !enough && !pl.bot) {
+        const done = this.path.closed ? enough && crossed && !pl.behindLine : enough && ci === n - 1;
+        if (crossed && pl.behindLine) {
+          pl.behindLine = false;
+          pl.visited = new Set([0]);
+        } else if (crossed && !enough && !pl.bot) {
           pl.hud.message('MISSED TILES!', 'crash', 1.6);
           pl.missedT = 5;
         }
